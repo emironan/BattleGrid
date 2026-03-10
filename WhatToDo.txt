@@ -1,0 +1,23 @@
+DONE 1 - Main DB table structure is done
+	DONE 1.1 - Draw ER and Relational diagrams
+	DONE 1.2 - Create SQL scripts to create tables and relationships and insert sample data
+	DONE 1.3 - Create the DB in PostgreSQL and run the scripts
+
+DONE 2 - Implement a simple ASP.NET Core Web API app to connect to the DB
+	DONE 2.1 - Create the project and set up the connection string
+	DONE 2.2 - Create the DbContext and configure it to use PostgreSQL
+	DONe 2.3 - Implement swaggerUI for API documentation and testing
+	DONE 2.4 - Test the connection to the DB by creating a simple endpoint that;
+			a) retrieves data from one of the tables
+			b) inserts data into one of the tables
+
+	 3 - Create the backend/server, complete with services, interfaces and controllers
+	DONE 3.1 - Create the models to represent the DB tables
+		 3.2 - Create AuthServices to handle session-related operations (user registration and login)
+		 3.2 - Create UserServices to handle user-related operations
+		 3.3 - Create 
+		 .
+		 .
+		 .
+	 4 - Implement game logic
+	 5 - Implement the frontend (C# or React?)

@@ -1,0 +1,6 @@
+@BattleGrid.API_HostAddress = https://localhost:4743
+
+GET {{BattleGrid.API_HostAddress}}/
+Accept: application/json
+
+###
