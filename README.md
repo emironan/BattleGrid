@@ -17,12 +17,12 @@
 
 		  Open a terminal window in your IDE and in the main project folder run the commands in order:
 			 dotnet build		/* This will build the entire solution (including all 3 projects)
-						 *  and restore any necessary packages.
-						 */
+						 		 *  and restore any necessary packages.
+						 		 */
 			 cd BattleGrid.API	// This will move to the server backend project folder
-			 dotnet run		/* Or preferably, choose the BattleGrid.API project as the startup project in VS and run it.
-						 * You can choose between https, http or IIS Express. It should all work fine.
-						 */
+			 dotnet run			/* Or preferably, choose the BattleGrid.API project as the startup project in VS and run it.
+						 	 	 * You can choose between https, http or IIS Express. It should all work fine.
+						 	 	 */
 
 		  Running it directly via VS will open a new browser window with the API documentation (Swagger UI)
 		   where you can test the API endpoints.
@@ -42,11 +42,11 @@
 
 		    Open another terminal or do a `cd ..` in the first one
 			cd BattleGrid.Tests	// Moves to the test project folder
-			dotnet test		// This will run all the tests in the project and show the results in the terminal.
-						/* Or, you can open the Test Explorer in VS (Test > Test Explorer) 
-						 * This will open the Test Explorer 
-						 *  where you can run and debug tests individually or all at once. 
-						 */
+			dotnet test			// This will run all the tests in the project and show the results in the terminal.
+								/* Or, you can open the Test Explorer in VS (Test > Test Explorer) 
+						 		 * This will open the Test Explorer 
+						 		 *  where you can run and debug tests individually or all at once. 
+						 		 */
 
 
 		- Console app. It is used to test the game logic. 2 ships per player is pre-placed.
@@ -55,4 +55,4 @@
 
 		    Again, open another terminal or do a `cd ..` in the first one
 			cd BattleGrid.Console	// Moves to the console app project folder
-			dotnet run		// This will launch a new terminal window where you can play the game.
+			dotnet run				// This will launch a new terminal window where you can play the game.
