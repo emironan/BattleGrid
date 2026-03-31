@@ -1,6 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
-
-namespace BattleGrid.Contracts.ResponseDtos
+﻿namespace BattleGrid.Contracts.ResponseDtos
 {
     public class GeneralResponseDto
     {

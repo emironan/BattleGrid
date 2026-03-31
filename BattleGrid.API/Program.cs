@@ -1,12 +1,12 @@
-using BattleGrid.Application.Interfaces;
-using BattleGrid.Application.Services;
-using BattleGrid.Infrastructure.Data;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi.Models;
 using NSwag.AspNetCore;
 using System.Text;
+using BattleGrid.Application.Interfaces;
+using BattleGrid.Application.Services;
+using BattleGrid.Infrastructure.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -86,6 +86,7 @@ builder.Services.AddSwaggerGen(options =>
 builder.Services.AddScoped<IAuthServices, AuthServices>();
 builder.Services.AddScoped<IUserServices, UserServices>();
 builder.Services.AddScoped<IShipTypeServices, ShipTypeServices>();
+builder.Services.AddScoped<IShipPlacementServices, ShipPlacementServices>();
 
 var app = builder.Build();
 

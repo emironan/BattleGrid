@@ -8,16 +8,16 @@ DONE 2 - Implement a simple ASP.NET Core Web API app to connect to the DB
 	DONE 2.2 - Create the DbContext and configure it to use PostgreSQL
 	DONe 2.3 - Implement swaggerUI for API documentation and testing
 	DONE 2.4 - Test the connection to the DB by creating a simple endpoint that;
-			a) retrieves data from one of the tables
-			b) inserts data into one of the tables
+		DONE a) retrieves data from one of the tables
+		DONE b) inserts data into one of the tables
 
-	 3 - Create the backend/server, complete with services, interfaces and controllers
-	DONE 3.1 - Create the models to represent the DB tables
-		 3.2 - Create AuthServices to handle session-related operations (user registration and login)
+	 3 - Create the backend/server, complete with all the services, interfaces and controllers
+	DONE 3.1 - Create the entities and models in backend to represent the DB tables
+	PARTIALLY DONE 3.2 - Create AuthServices to handle session-related operations (user registration and login)
 		 3.2 - Create UserServices to handle user-related operations
-		 3.3 - Create 
+		 3.3 - Create rest of the required services one-by-one
 		 .
 		 .
 		 .
-	 4 - Implement game logic
-	 5 - Implement the frontend (C# or React?)
+	PARTIALLY DONE 4 - Implement game logic
+	 5 - Implement the frontend (C# Blazor or React?)

@@ -1,4 +1,3 @@
-using BattleGrid.Domain.Enums;
 using Microsoft.VisualBasic;
 
 namespace BattleGrid.Domain.Entities;

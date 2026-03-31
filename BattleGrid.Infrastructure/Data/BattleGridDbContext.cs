@@ -10,6 +10,7 @@ public sealed class BattleGridDbContext : DbContext
     }
 
     public DbSet<User> User => Set<User>();
+    public DbSet<PlayerStat> PlayerStat => Set<PlayerStat>();
     public DbSet<Session> Session => Set<Session>();
     public DbSet<Match> Match => Set<Match>();
     public DbSet<MatchMove> MatchMove => Set<MatchMove>();
@@ -26,42 +27,36 @@ public sealed class BattleGridDbContext : DbContext
 
         modelBuilder.Entity<User>(entity =>
         {
-            entity.ToTable("User");
             entity.HasKey(x => x.UserID);
-
-            entity.Property(x => x.UserID).HasColumnName("UserID");
-            entity.Property(x => x.UserName).HasColumnName("UserName");
-            entity.Property(x => x.Email).HasColumnName("Email");
-            entity.Property(x => x.PasswordHash).HasColumnName("PasswordHash");
-            entity.Property(x => x.Role).HasColumnName("Role");
-            entity.Property(x => x.Rating).HasColumnName("Rating");
-            entity.Property(x => x.MatchesPlayed).HasColumnName("MatchesPlayed");
-            entity.Property(x => x.IsBanned).HasColumnName("IsBanned");
-            entity.Property(x => x.CreatedAt).HasColumnName("CreatedAt");
-            entity.Property(x => x.LastUpdatedAt).HasColumnName("LastUpdatedAt");
 
             entity.HasIndex(x => x.UserName).IsUnique();
             entity.HasIndex(x => x.Email).IsUnique();
         });
 
+        modelBuilder.Entity<PlayerStat>(entity =>
+        {
+            entity.HasKey(x => x.StatID);
+
+            entity.HasIndex(x => x.MatchesPlayed);
+            entity.HasIndex(x => x.MatchesWon);
+            entity.HasIndex(x => x.WinRate);
+            entity.HasIndex(x => x.Rating);
+            entity.HasIndex(x => x.HighestRating);
+
+            entity.HasOne<User>()
+                .WithMany()
+                .HasForeignKey(x => x.UserID)
+                .OnDelete(DeleteBehavior.NoAction);
+        });
+
         modelBuilder.Entity<Session>(entity =>
         {
-            entity.ToTable("Session");
             entity.HasKey(x => x.SessionID);
 
-            entity.Property(x => x.SessionID).HasColumnName("SessionID");
-            entity.Property(x => x.UserID).HasColumnName("UserID");
-            entity.Property(x => x.RefreshToken).HasColumnName("RefreshToken");
-            entity.Property(x => x.RT_ExpiresAt).HasColumnName("RT_ExpiresAt");
-            entity.Property(x => x.AccessToken).HasColumnName("AccessToken");
-            entity.Property(x => x.AT_ExpiresAt).HasColumnName("AT_ExpiresAt");
-            entity.Property(x => x.LastLogin).HasColumnName("LastLogin");
-            entity.Property(x => x.IsRevoked).HasColumnName("IsRevoked");
-            entity.Property(x => x.CreatedAt).HasColumnName("CreatedAt");
-            entity.Property(x => x.LastUpdatedAt).HasColumnName("LastUpdatedAt");
-
             entity.HasIndex(x => x.RefreshToken).IsUnique();
+            entity.HasIndex(x => x.RT_ExpiresAt);
             entity.HasIndex(x => x.AccessToken).IsUnique();
+            entity.HasIndex(x => x.AT_ExpiresAt);
 
             entity.HasOne<User>()
                 .WithOne()
@@ -70,19 +65,11 @@ public sealed class BattleGridDbContext : DbContext
 
         modelBuilder.Entity<Match>(entity =>
         {
-            entity.ToTable("Match");
             entity.HasKey(x => x.MatchID);
 
-            entity.Property(x => x.MatchID).HasColumnName("MatchID");
-            entity.Property(x => x.Player1ID).HasColumnName("Player1ID");
-            entity.Property(x => x.Player2ID).HasColumnName("Player2ID");
-            entity.Property(x => x.P1RatingChange).HasColumnName("P1RatingChange");
-            entity.Property(x => x.P2RatingChange).HasColumnName("P2RatingChange");
-            entity.Property(x => x.Status).HasColumnName("Status");
-            entity.Property(x => x.TotalNoOfTurns).HasColumnName("TotalNoOfTurns");
-            entity.Property(x => x.FinishReason).HasColumnName("FinishReason");
-            entity.Property(x => x.StartedAt).HasColumnName("StartedAt");
-            entity.Property(x => x.FinishedAt).HasColumnName("FinishedAt");
+            entity.HasIndex(x => x.Player1ID);
+            entity.HasIndex(x => x.Player2ID);
+            entity.HasIndex(x => x.StartedAt);
 
             entity.HasOne<User>()
                 .WithMany()
@@ -96,17 +83,10 @@ public sealed class BattleGridDbContext : DbContext
 
         modelBuilder.Entity<MatchMove>(entity =>
         {
-            entity.ToTable("MatchMove");
             entity.HasKey(x => x.MoveID);
 
-            entity.Property(x => x.MoveID).HasColumnName("MoveID");
-            entity.Property(x => x.PlayerID).HasColumnName("PlayerID");
-            entity.Property(x => x.MatchID).HasColumnName("MatchID");
-            entity.Property(x => x.MoveNumber).HasColumnName("MoveNumber");
-            entity.Property(x => x.HitX).HasColumnName("HitX");
-            entity.Property(x => x.HitY).HasColumnName("HitY");
-            entity.Property(x => x.Result).HasColumnName("Result");
-            entity.Property(x => x.TimeOfMove).HasColumnName("TimeOfMove");
+            entity.HasIndex(x => x.PlayerID);
+            entity.HasIndex(x => x.MatchID);
 
             entity.HasOne<User>()
                 .WithMany()
@@ -120,29 +100,12 @@ public sealed class BattleGridDbContext : DbContext
 
         modelBuilder.Entity<ShipType>(entity => 
         {
-            entity.ToTable("ShipType");
             entity.HasKey(x => x.ShipID);
-
-            entity.Property(x => x.ShipID).HasColumnName("ShipID");
-            entity.Property(x => x.ShipName).HasColumnName("ShipName");
-            entity.Property(x => x.Length).HasColumnName("Length");
-            entity.Property(x => x.Width).HasColumnName("Width");
-            entity.Property(x => x.MaxPerPlayer).HasColumnName("MaxPerPlayer");
         });
 
         modelBuilder.Entity<ShipPlacement>(entity =>
         {
-            entity.ToTable("ShipPlacement");
             entity.HasKey(x => x.PlacementID);
-
-            entity.Property(x => x.PlacementID).HasColumnName("PlacementID");
-            entity.Property(x => x.PlayerID).HasColumnName("PlayerID");
-            entity.Property(x => x.MatchID).HasColumnName("MatchID");
-            entity.Property(x => x.ShipID).HasColumnName("ShipID");
-            entity.Property(x => x.StartX).HasColumnName("StartX");
-            entity.Property(x => x.StartY).HasColumnName("StartY");
-            entity.Property(x => x.IsVertical).HasColumnName("IsVertical");
-            entity.Property(x => x.PlacedAt).HasColumnName("PlacedAt");
 
             entity.HasOne<User>()
                 .WithMany()
@@ -160,32 +123,25 @@ public sealed class BattleGridDbContext : DbContext
 
         modelBuilder.Entity<Spectator>(entity =>
         {
-            entity.ToTable("Spectator");
-            entity.HasKey(x => x.SpectatorID);
+            entity.HasKey(x => new { x.SpectatorID, x.MatchID });
 
-            entity.Property(x => x.SpectatorID).HasColumnName("SpectatorID");
-            entity.Property(x => x.MatchID).HasColumnName("MatchID");
-            entity.Property(x => x.JoinedAt).HasColumnName("JoinedAt");
-            entity.Property(x => x.Duration).HasColumnName("Duration");
+            entity.HasIndex(x => new { x.SpectatorID, x.MatchID }).IsUnique();
 
             entity.HasOne<User>()
                 .WithMany()
                 .HasForeignKey(x => x.SpectatorID)
                 .OnDelete(DeleteBehavior.NoAction);
-            entity.HasMany<Match>()
-                .WithOne()
+            entity.HasOne<Match>()
+                .WithMany()
                 .HasForeignKey(x => x.MatchID)
                 .OnDelete(DeleteBehavior.NoAction);
         });
 
         modelBuilder.Entity<MatchmakingQueue>(entity =>
         {
-            entity.ToTable("MatchmakingQueue");
             entity.HasKey(x => x.QueueID);
 
-            entity.Property(x => x.QueueID).HasColumnName("QueueID");
-            entity.Property(x => x.PlayerID).HasColumnName("PlayerID");
-            entity.Property(x => x.JoinedAt).HasColumnName("JoinedAt");
+            entity.HasIndex(x => x.JoinedAt);
 
             entity.HasOne<User>()
                 .WithOne()
@@ -195,18 +151,17 @@ public sealed class BattleGridDbContext : DbContext
 
         modelBuilder.Entity<BanList>(entity =>
         {
-            entity.ToTable("BanList");
             entity.HasKey(x => x.BanID);
 
-            entity.Property(x => x.BanID).HasColumnName("BanID");
-            entity.Property(x => x.AdminID).HasColumnName("AdminID");
-            entity.Property(x => x.PlayerID).HasColumnName("PLayerID");
-            entity.Property(x => x.IsReverted).HasColumnName("IsReverted");
-            entity.Property(x => x.Reason).HasColumnName("Reason");
-            entity.Property(x => x.IsTemporary).HasColumnName("IsTemporary");
-            entity.Property(x => x.BannedAt).HasColumnName("BannedAt");
-            entity.Property(x => x.Duration).HasColumnName("Duration");
-            entity.Property(x => x.BannedUntil).HasColumnName("BannedUntil");
+            entity.HasIndex(x => x.AdminID);
+            entity.HasIndex(x => x.PlayerID);
+            entity.HasIndex(x => x.BannedAt);
+            entity.HasIndex(x => x.Duration);
+            entity.HasIndex(x => x.BannedUntil);
+            entity.HasIndex(x => new { x.IsTemporary, x.BannedAt });
+            entity.HasIndex(x => new { x.IsTemporary, x.Duration });
+            entity.HasIndex(x => new { x.IsTemporary, x.BannedUntil });
+            entity.HasIndex(x => new { x.IsTemporary, x.BannedAt, x.Duration });
 
             entity.HasOne<User>()
                 .WithMany()

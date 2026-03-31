@@ -1,11 +1,10 @@
-﻿using System;
+﻿using Microsoft.EntityFrameworkCore.Storage;
 using Microsoft.EntityFrameworkCore;
-using BattleGrid.Domain.Entities;
-using BattleGrid.Domain.Enums;
 using BattleGrid.Application.Interfaces;
 using BattleGrid.Contracts.ResponseDtos;
 using BattleGrid.Infrastructure.Data;
-using Microsoft.EntityFrameworkCore.Storage;
+using BattleGrid.Domain.Entities;
+using BattleGrid.Domain.Enums;
 
 namespace BattleGrid.Application.Services
 {
@@ -18,7 +17,7 @@ namespace BattleGrid.Application.Services
             _context = context;
         }
 
-        public async Task<UserResponseDto> GetUserAsync(int userId)
+        public async Task<UserResponseDto?> GetUserAsync(int userId)
         {
             var user = await _context.User
                 .Where(c => c.UserID == userId)
@@ -34,9 +33,7 @@ namespace BattleGrid.Application.Services
                 UserID = user.UserID,
                 UserName = user.UserName,
                 Email = user.Email,
-                Role = user.Role,
-                Rating = user.Rating,
-                MatchesPlayed = user.MatchesPlayed,
+                IsAdmin = user.IsAdmin,
                 IsBanned = user.IsBanned
             };
         }

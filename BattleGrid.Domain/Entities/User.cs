@@ -8,9 +8,7 @@ public sealed class User
     public string? UserName { get; set; }
     public string Email { get; set; } = "";
     public string PasswordHash { get; set; } = "";
-    public UserRole Role { get; set; } = UserRole.Player;
-    public int Rating { get; set; } = 1000;
-    public int MatchesPlayed { get; set; } = 0;
+    public bool IsAdmin { get; set; } = false;
     public bool IsBanned { get; set; } = false;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? LastUpdatedAt { get; set; }
