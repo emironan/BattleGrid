@@ -30,9 +30,10 @@ project.lock.json
 project.fragment.lock.json
 artifacts/
 
-# appsettings files with secrets
-appsettings.json
-appsettings.*.json
+# appsettings files will be uploaded since this is a private repo 
+#(until the project is completed), and they do not contain actual secrets
+#appsettings.json
+#appsettings.*.json
 
 # ASP.NET Scaffolding
 ScaffoldingReadMe.txt
