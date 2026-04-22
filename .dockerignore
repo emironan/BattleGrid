@@ -1,0 +1,12 @@
+**/.git
+**/.vs
+**/.vscode
+**/.cursor
+**/bin
+**/obj
+**/node_modules
+**/.env
+**/appsettings.Development.json
+**/appsettings.Local.json
+BattleGrid.Tests/
+BattleGrid.Console/

@@ -25,6 +25,26 @@ namespace BattleGrid.API.Controllers
             _context = context;
         }
 
+        [HttpGet("User/")]
+        public async Task<ActionResult> GetAllUsers()
+        {
+            try
+            {
+                var users = await _userService.GetAllUsersAsync();
+
+                if (users == null)
+                {
+                    return NotFound("No user found!");
+                }
+
+                return Ok(users);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An error occured while retrieving the users: {ex.Message}");
+            }
+        }
+
         [HttpGet("User/{userId}")]
         public async Task<ActionResult> GetUserById(int userId)
         {

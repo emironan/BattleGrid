@@ -18,8 +18,9 @@
 	First things first, you need to create the database. Open pgAdmin4.
 	Create the DB with the exact name "BattleGridDB", under Databases.
 	Find the SQL codes for the DB in the BattleGrid.Infrastructure/DatabaseCodes
-		Start with Tables_and_Indexed_vX.sql (latest version) to create the tables.
-		Then, run SP_and_Triggers_vX.sql, and then Views_vX.sql queries.
+		Start with 01_Tables_and_Indexed_vX.sql (latest version) to create the tables.
+		Then, run 02_SP_and_Triggers_vX.sql, and then 03_Views_vX.sql queries.
+		They are named 01, 02, 03 to indicate the order of execution for Docker.
 
 	Back to the IDE. If you view via solution explorer,
 		You will see there are currently 2 parts: src and tests.
@@ -34,17 +35,18 @@
 			and SignalR will be implemented in the future for real-time 
 			communication/handling of user interactions.
 		  
-		  API, Applicaion, Contracts, Domain, and Infrastructure belong to server backend.
+		  API, Application, Contracts, Domain, and Infrastructure belong to server backend.
 
 		  For now, API endpoints include register a user, get user info, 
 			get ship type list and save ship placement in DB.
-		  Game logic is implemented in the backend, in BattleGrid.Domain/GameLogic folder,
-			but it is not fully integrated with the API endpoints yet.
+		  Game logic is implemented in the backend, in BattleGrid.Domain/GameLogic folder.
+		  It will not be implemented with API controllers, but rather with SignalR hubs in the future.
 
 		  Open a terminal window in your IDE and in the main project folder,
 			run the commands in order:
 			
-			dotnet build		/* This will build the entire solution, all 3 projects
+			dotnet build		/* This will build the entire solution, all 3 projects:
+								 * Server, Console and Tests;
 						 		 *  and restore any necessary packages.
 						 		 */
 			cd BattleGrid.API	// This will move to the server backend project folder

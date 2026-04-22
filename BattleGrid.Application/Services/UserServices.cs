@@ -17,6 +17,15 @@ namespace BattleGrid.Application.Services
             _context = context;
         }
 
+        public async Task<List<UserResponseDto>> GetAllUsersAsync()
+        {
+            var users = await _context.User
+                .OrderBy(c => c.UserID)
+                .Select(c => MapToResponseDto(c))
+                .ToListAsync();
+            return users;
+        }
+
         public async Task<UserResponseDto?> GetUserAsync(int userId)
         {
             var user = await _context.User

@@ -1,0 +1,42 @@
+services:
+
+  api:
+    build:
+      context: .
+      dockerfile: BattleGrid.API/Dockerfile
+    container_name: battlegrid_api
+    ports:
+      - "4744:8080"    # maps local port 4744 -> container's 8080
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ASPNETCORE_URLS: http://+:8080
+      ConnectionStrings__BattleGridDB: "Host=db;Port=5432;Database=BattleGridDB;Username=postgres;Password=1234;Include Error Detail=true"
+      Jwt__Secret: "LongAndSecureEnoughSigningKeyForBattleGrid321!"
+      Jwt__Issuer: "BattleGrid_DockerLocal"
+      Jwt__Audience: "BattleGrid_DockerLocal"
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: on-failure
+
+  db:
+    image: postgres:18
+    container_name: battlegrid_db
+    environment:
+      POSTGRES_DB: BattleGridDB
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: 1234
+    ports:
+      - "5433:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql
+      - ./BattleGrid.Infrastructure/DatabaseCodes:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d BattleGridDB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  pgdata:
