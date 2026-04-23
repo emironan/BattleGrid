@@ -25,7 +25,7 @@ namespace BattleGrid.API.Controllers
             _context = context;
         }
 
-        [HttpGet("ShipTypeList/")]
+        [HttpGet("/shipTypeList")]
         public async Task<ActionResult> ShipTypeList()
         {
             try

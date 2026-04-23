@@ -13,8 +13,9 @@ namespace BattleGrid.Contracts.RequestDtos
 
     public class LoginRequestDto
     {
+        // It can be email or username. So, named it as LoginInfo
         [Required]
-        public string Email { get; set; } = string.Empty;
+        public string LoginInfo { get; set; } = string.Empty;
         [Required]
         public string Password { get; set; } = string.Empty;
     }

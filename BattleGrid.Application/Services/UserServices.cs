@@ -26,13 +26,58 @@ namespace BattleGrid.Application.Services
             return users;
         }
 
-        public async Task<UserResponseDto?> GetUserAsync(int userId)
+        public async Task<UserResponseDto?> GetByIdAsync(int userId)
         {
             var user = await _context.User
                 .Where(c => c.UserID == userId)
                 .Select(c => MapToResponseDto(c))
                 .FirstOrDefaultAsync();
             return user;
+        }
+
+        // Find a user via UserName or Email
+        public async Task<UserResponseDto?> GetByLoginInfoAsync(string loginInfo)
+        {
+            string normalizedLoginInfo = loginInfo.Trim();
+
+            var user = await _context.User
+                .Where(c => c.UserName == normalizedLoginInfo || c.Email == normalizedLoginInfo)
+                .Select(c => MapToResponseDto(c))
+                .FirstOrDefaultAsync();
+
+            return user;
+        }
+
+        public async Task<string> HashPasswordAsync(int userId)
+        {
+            var user = await _context.User
+                .Where(c => c.UserID == userId)
+                .FirstOrDefaultAsync()
+                ?? throw new Exception("User not found!"); // Redundant, AuthServices makes a null user check before calling
+
+            //Redundant check since, we only call this service when the password is plain text in DB
+            if (!user.PasswordHash.StartsWith("$2a$"))
+            {
+                user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(user.PasswordHash);
+                user.LastUpdatedAt = DateTimeOffset.UtcNow.ToUniversalTime();
+
+                await _context.SaveChangesAsync();
+            }
+
+            // Get the same user again with updated password field
+            var userNew = await _context.User
+                .Where(c => c.UserID == userId)
+                .FirstOrDefaultAsync()
+                ?? throw new Exception("User not found!"); // Redundant, after all the checks to see if the user is null
+
+            // Check if the password is updated to a hashed version
+            if (!userNew.PasswordHash.StartsWith("$2a$"))
+            {
+                throw new Exception("An error occured during password hash creation");
+            }
+
+            return userNew.PasswordHash;
+
         }
 
         private static UserResponseDto MapToResponseDto(User user)

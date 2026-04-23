@@ -24,7 +24,7 @@ namespace BattleGrid.API.Controllers
             _context = context;
         }
 
-        [HttpPost("place-ship")]
+        [HttpPost("/placeShip")]
         public async Task<IActionResult> PlaceShip([FromBody] PlaceShipRequestDto dto)
         {
             try
