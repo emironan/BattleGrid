@@ -7,6 +7,7 @@ using System.Text;
 using BattleGrid.Application.Interfaces;
 using BattleGrid.Application.Services;
 using BattleGrid.Infrastructure.Data;
+using BattleGrid.Application.Helpers;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,7 +21,10 @@ builder.Services.AddDbContext<BattleGridDbContext>(options =>
     {
         throw new InvalidOperationException("Connection string 'BattleGridDB' is missing.");
     }
-    options.UseNpgsql(cs);
+    options.UseNpgsql(cs)
+           //.EnableSensitiveDataLogging()
+           //.LogTo(Console.WriteLine)
+           ;
 });
 
 builder.Services
@@ -82,6 +86,8 @@ builder.Services.AddSwaggerGen(options =>
         }
     });
 });
+
+builder.Services.AddScoped<JwtHelper>();
 
 builder.Services.AddScoped<IAuthServices, AuthServices>();
 builder.Services.AddScoped<IUserServices, UserServices>();

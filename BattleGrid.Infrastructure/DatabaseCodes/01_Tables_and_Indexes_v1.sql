@@ -39,7 +39,7 @@ CREATE TABLE "Session" (
     "UserID" INT NOT NULL REFERENCES "User"("UserID"),
     "RefreshToken" VARCHAR(255) NOT NULL UNIQUE,
     "RT_ExpiresAt" TIMESTAMPTZ NOT NULL,
-    "AccessToken" VARCHAR(255) NOT NULL UNIQUE,
+    "AccessToken" VARCHAR(500) NOT NULL UNIQUE,
     "AT_ExpiresAt" TIMESTAMPTZ NOT NULL,
     "LastLogin" TIMESTAMPTZ NOT NULL,
     "IsRevoked" BOOLEAN NOT NULL DEFAULT FALSE,
@@ -133,11 +133,11 @@ INSERT INTO "ShipType" ("ShipName", "Length", "Width", "MaxPerPlayer") VALUES
 ('Submarine',  3, 1, 2),
 ('Destroyer',  2, 1, 2);
 
-INSERT INTO "User" ("UserName", "Email", "PasswordHash") VALUES
-('P1', 'p1@test.com', '1234'),
-('P2', 'p2@test.com', '1234'),
-('P3', 'p3@test.com', '1234'),
-('P4', 'p4@test.com', '1234');
+INSERT INTO "User" ("UserName", "Email", "PasswordHash", "IsAdmin") VALUES
+('P1', 'p1@test.com', '1234', 'true'),
+('P2', 'p2@test.com', '1234', 'false'),
+('P3', 'p3@test.com', '1234', 'false'),
+('P4', 'p4@test.com', '1234', 'false');
 
 INSERT INTO "Match" ("Player1ID", "Player2ID", "Status") VALUES
 (1, 2, 3); -- In Progress
