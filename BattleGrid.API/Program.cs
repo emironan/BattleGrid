@@ -92,6 +92,7 @@ builder.Services.AddScoped<JwtHelper>();
 builder.Services.AddScoped<IAuthServices, AuthServices>();
 builder.Services.AddScoped<IUserServices, UserServices>();
 builder.Services.AddScoped<IShipTypeServices, ShipTypeServices>();
+builder.Services.AddScoped<IMatchServices, MatchServices>();
 builder.Services.AddScoped<IShipPlacementServices, ShipPlacementServices>();
 
 var app = builder.Build();

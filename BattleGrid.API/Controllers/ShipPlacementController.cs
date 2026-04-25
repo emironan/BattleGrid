@@ -15,25 +15,40 @@ namespace BattleGrid.API.Controllers
     [Route("api/[controller]")]
     public class ShipPlacementController : ControllerBase
     {
-        private readonly IShipPlacementServices _shipPlacementService;
         private readonly BattleGridDbContext _context;
+        private readonly IShipPlacementServices _shipPlacementServices;
+        private readonly IMatchServices _matchServices;
 
-        public ShipPlacementController(IShipPlacementServices shipPlacementService, BattleGridDbContext context)
+        public ShipPlacementController(BattleGridDbContext context,
+                                       IShipPlacementServices shipPlacementServices,
+                                       IMatchServices matchServices)
         {
-            _shipPlacementService = shipPlacementService;
             _context = context;
+            _shipPlacementServices = shipPlacementServices;
+            _matchServices = matchServices;
         }
 
-        [HttpPost("/placeShip")]
+        [HttpPost("placeShip")]
         public async Task<IActionResult> PlaceShip([FromBody] PlaceShipRequestDto dto)
         {
             try
             {
-                var result = await _shipPlacementService.PlaceShipAsync(dto);
+                // Check if the player sending the request is actually a player in that match
+                bool IsPlayer = await _matchServices.ValidatePlayer(dto.MatchID, dto.PlayerID);
+                
+                if(!IsPlayer)
+                {
+                    throw new UnauthorizedAccessException("Requesting user is not a player in this match!");
+                }
+
+                //aaa TODO add a check to make sure player can not place more than allowed of any ship type
+
+                var result = await _shipPlacementServices.PlaceShipAsync(dto);
+
                 if (!result.Success)
                 {
                     //_logger.LogError("Registration failed - email already exists: {Email}", dto.Email);
-                    return BadRequest($"An error occured while registering the user: {result.Message}");
+                    return BadRequest($"An error occured while placing the ship: {result.Message}");
                 }
 
                 return Ok(result.Message);

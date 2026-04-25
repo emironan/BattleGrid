@@ -25,7 +25,7 @@ namespace BattleGrid.API.Controllers
             _context = context;
         }
 
-        [HttpGet("/all")]
+        [HttpGet("all")]
         public async Task<ActionResult> GetAllUsers()
         {
             try
@@ -45,7 +45,7 @@ namespace BattleGrid.API.Controllers
             }
         }
 
-        [HttpGet("/{userId:int}")]
+        [HttpGet("{userId:int}")]
         public async Task<ActionResult> GetUserById(int userId)
         {
             try
@@ -65,7 +65,7 @@ namespace BattleGrid.API.Controllers
             }
         }
 
-        [HttpGet("/{loginInfo}")]
+        [HttpGet("{loginInfo}")]
         public async Task<IActionResult> GetByLoginInfo(string loginInfo)
         {
             try

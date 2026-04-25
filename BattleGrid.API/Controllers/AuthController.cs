@@ -24,7 +24,7 @@ namespace BattleGrid.API.Controllers
             _context = context;
         }
 
-        [HttpPost("/register")]
+        [HttpPost("register")]
         public async Task<IActionResult> Register([FromBody] RegisterRequestDto dto)
         {
             try
@@ -44,7 +44,7 @@ namespace BattleGrid.API.Controllers
             }
         }
 
-        [HttpPost("/login")]
+        [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequestDto dto)
         {
             var tokenResponse = await _authServices.LoginAsync(dto);
