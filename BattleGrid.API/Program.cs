@@ -6,8 +6,9 @@ using NSwag.AspNetCore;
 using System.Text;
 using BattleGrid.Application.Interfaces;
 using BattleGrid.Application.Services;
-using BattleGrid.Infrastructure.Data;
 using BattleGrid.Application.Helpers;
+using BattleGrid.Infrastructure.Data;
+using BattleGrid.Domain.Entities;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -89,11 +90,18 @@ builder.Services.AddSwaggerGen(options =>
 
 builder.Services.AddScoped<JwtHelper>();
 
-builder.Services.AddScoped<IAuthServices, AuthServices>();
-builder.Services.AddScoped<IUserServices, UserServices>();
+//aaa TODO: Un-comment them as we implement them. Some might be unnecessary and be deleted if not implemented at all
+builder.Services.AddScoped<IAuthServices, AuthServices>(); // Some but not all Session AND User table related services such as; register, login, logout, and verify password
+//aaa builder.Services.AddScoped<IAdminServices, AdminServices>(); // Admin related services such as; banning players, and resetting leaderboards
+builder.Services.AddScoped<IUserServices, UserServices>(); // Rest of the User table related services. Also, include PlayerStat table related services here
+//aaa builder.Services.AddScoped<ISessionServices, SessionServices>(); // Rest of the Session table related services. Mostly, HTTP GET methods
 builder.Services.AddScoped<IShipTypeServices, ShipTypeServices>();
 builder.Services.AddScoped<IMatchServices, MatchServices>();
 builder.Services.AddScoped<IShipPlacementServices, ShipPlacementServices>();
+//aaa builder.Services.AddScoped<IReplayServices, ReplayServices>(); // Spectator table related services AND for normal users to replay their own matches
+//aaa builder.Services.AddScoped<IMatchMakingServices, MatchmakingServices>(); // If we can handle this in-memory with SignalR, we may get rid of MatchmakingQueue table and this service
+//aaa builder.Services.AddScoped<IMatchMoveServices, MatchMoveServices>();
+//aaa builder.Services.AddScoped<IBanListServices, BanListServices>(); // Rest of the BanList table related services. Mostly HTTP GET methods for checking if a player is banned, when their ban is going to be lifted, or if it is permanent etc
 
 var app = builder.Build();
 

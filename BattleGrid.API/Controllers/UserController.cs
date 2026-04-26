@@ -16,13 +16,14 @@ namespace BattleGrid.API.Controllers
     [Route("api/[controller]")]
     public class UserController : ControllerBase
     {
-        private readonly IUserServices _userServices;
         private readonly BattleGridDbContext _context;
+        private readonly IUserServices _userServices;
 
-        public UserController(IUserServices userService, BattleGridDbContext context)
+        public UserController(BattleGridDbContext context,
+                              IUserServices userService)
         {
-            _userServices = userService;
             _context = context;
+            _userServices = userService;
         }
 
         [HttpGet("all")]

@@ -15,13 +15,14 @@ namespace BattleGrid.API.Controllers
     [Route("api/[controller]")]
     public class AuthController : ControllerBase
     {
-        private readonly IAuthServices _authServices;
         private readonly BattleGridDbContext _context;
+        private readonly IAuthServices _authServices;
 
-        public AuthController(IAuthServices authServices, BattleGridDbContext context)
+        public AuthController(BattleGridDbContext context, 
+                              IAuthServices authServices)
         {
-            _authServices = authServices;
             _context = context;
+            _authServices = authServices;
         }
 
         [HttpPost("register")]

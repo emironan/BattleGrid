@@ -16,16 +16,17 @@ namespace BattleGrid.API.Controllers
     [Route("api/[controller]")]
     public class ShipTypeController : ControllerBase
     {
-        private readonly IShipTypeServices _shipTypeService;
         private readonly BattleGridDbContext _context;
+        private readonly IShipTypeServices _shipTypeService;
 
-        public ShipTypeController(IShipTypeServices shipTypeService, BattleGridDbContext context)
+        public ShipTypeController(BattleGridDbContext context, 
+                                  IShipTypeServices shipTypeService)
         {
-            _shipTypeService = shipTypeService;
             _context = context;
+            _shipTypeService = shipTypeService;
         }
 
-        [HttpGet("shipTypes/all")]
+        [HttpGet("all")]
         public async Task<ActionResult> ShipTypeList()
         {
             try
