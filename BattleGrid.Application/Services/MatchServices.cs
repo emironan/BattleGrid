@@ -28,7 +28,7 @@ namespace BattleGrid.Application.Services
             return players;
         }
 
-        public async Task<bool> ValidatePlayer(int matchId, int playerId)
+        public async Task<bool> ValidatePlayerAsync(int matchId, int playerId)
         {
             var PlayersOfAMatch = await _context.Match
                 .Where(m => m.MatchID == matchId && (m.Player1ID == playerId || m.Player2ID == playerId))

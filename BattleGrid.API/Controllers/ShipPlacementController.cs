@@ -34,7 +34,7 @@ namespace BattleGrid.API.Controllers
             try
             {
                 // Check if the player sending the request is actually a player in that match
-                bool IsPlayer = await _matchServices.ValidatePlayer(dto.MatchID, dto.PlayerID);
+                bool IsPlayer = await _matchServices.ValidatePlayerAsync(dto.MatchID, dto.PlayerID);
                 
                 if(!IsPlayer)
                 {
