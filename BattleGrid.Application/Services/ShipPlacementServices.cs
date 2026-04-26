@@ -31,19 +31,19 @@ namespace BattleGrid.Application.Services
             });
             await _context.SaveChangesAsync();
 
-            if (result != null)
+            if (result == null)
             {
                 return new GeneralResponseDto
                 {
-                    Success = true,
-                    Message = "Gemi başarıyla yerleştirildi."
+                    Success = false,
+                    Message = "Gemi yerleştirilirken bir hata oluştu."
                 };
             }
 
             return new GeneralResponseDto
             {
-                Success = false,
-                Message = "Gemi yerleştirilirken bir hata oluştu."
+                Success = true,
+                Message = "Gemi başarıyla yerleştirildi."
             };
         }
     }
