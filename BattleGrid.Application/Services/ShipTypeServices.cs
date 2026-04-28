@@ -1,10 +1,8 @@
-﻿using System;
-using Microsoft.EntityFrameworkCore;
-using BattleGrid.Domain.Entities;
-using BattleGrid.Application.Interfaces;
+﻿using BattleGrid.Application.Interfaces;
 using BattleGrid.Contracts.ResponseDtos;
+using BattleGrid.Domain.Entities;
 using BattleGrid.Infrastructure.Data;
-using Microsoft.EntityFrameworkCore.Storage;
+using Microsoft.EntityFrameworkCore;
 
 namespace BattleGrid.Application.Services
 {

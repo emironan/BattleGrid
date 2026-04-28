@@ -115,6 +115,9 @@ CREATE TABLE "BanList" (
     "AdminID" INT NOT NULL REFERENCES "User"("UserID"),
     "PlayerID" INT NOT NULL REFERENCES "User"("UserID"),
     "IsReverted" BOOLEAN NOT NULL DEFAULT FALSE,
+    -- 0 means a system service automatically reverted it when the duration ended.
+    -- It only works with temporary bans! If we see a 0 as RevertingAdminID for a permanent ban, we have a problem!
+    "RevertingAdminID" INT, 
     "Reason" VARCHAR(255) NOT NULL,
     "IsTemporary" BOOLEAN NOT NULL DEFAULT FALSE,
     "BannedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),

@@ -1,15 +1,5 @@
-﻿using BattleGrid.Application.Helpers;
-using BattleGrid.Application.Interfaces;
-using BattleGrid.Contracts.RequestDtos;
-using BattleGrid.Contracts.ResponseDtos;
-using BattleGrid.Domain.Entities;
+﻿using BattleGrid.Application.Interfaces;
 using BattleGrid.Infrastructure.Data;
-using BCrypt.Net;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.EntityFrameworkCore.Storage;
-using System;
-using System.Security.Claims;
 
 
 namespace BattleGrid.Application.Services
