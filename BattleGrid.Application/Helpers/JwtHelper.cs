@@ -67,7 +67,7 @@ namespace BattleGrid.Application.Helpers
         }
 
         // Generate a random refresh token encoded in base64
-        public string GenerateRefreshToken()
+        public async Task<string> GenerateRefreshToken()
         {
             var randomNumber = new byte[64];
             using var rng = RandomNumberGenerator.Create();

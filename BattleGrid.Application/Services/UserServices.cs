@@ -1,10 +1,9 @@
-﻿using Microsoft.EntityFrameworkCore.Storage;
-using Microsoft.EntityFrameworkCore;
-using BattleGrid.Application.Interfaces;
+﻿using BattleGrid.Application.Interfaces;
+using BattleGrid.Contracts.RequestDtos;
 using BattleGrid.Contracts.ResponseDtos;
-using BattleGrid.Infrastructure.Data;
 using BattleGrid.Domain.Entities;
-using BattleGrid.Domain.Enums;
+using BattleGrid.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace BattleGrid.Application.Services
 {
@@ -22,6 +21,7 @@ namespace BattleGrid.Application.Services
             var users = await _context.User
                 .OrderBy(c => c.UserID)
                 .Select(c => MapToResponseDto(c))
+                .AsNoTracking()
                 .ToListAsync();
             return users;
         }
@@ -31,6 +31,7 @@ namespace BattleGrid.Application.Services
             var user = await _context.User
                 .Where(c => c.UserID == userId)
                 .Select(c => MapToResponseDto(c))
+                .AsNoTracking()
                 .FirstOrDefaultAsync();
             return user;
         }
@@ -40,9 +41,16 @@ namespace BattleGrid.Application.Services
         {
             string normalizedLoginInfo = loginInfo.Trim();
 
+            // If it is an email make it lowercase and standardize it
+            if(normalizedLoginInfo.Contains("@") && normalizedLoginInfo.Contains("."))
+            {
+                normalizedLoginInfo = normalizedLoginInfo.ToLowerInvariant();
+            }
+
             var user = await _context.User
                 .Where(c => c.UserName == normalizedLoginInfo || c.Email == normalizedLoginInfo)
                 .Select(c => MapToResponseDto(c))
+                .AsNoTracking()
                 .FirstOrDefaultAsync();
 
             return user;
@@ -77,8 +85,45 @@ namespace BattleGrid.Application.Services
             }
 
             return userNew.PasswordHash;
-
         }
+
+        public async Task<GeneralResponseDto> UserUpdateBySystemAsync(UserUpdateSystemRequestDto dto)
+        {
+            var user = await _context.User
+                .Where(u => u.UserID == dto.UserID)
+                .FirstOrDefaultAsync();
+
+            if (user == null)
+            {
+                return new GeneralResponseDto
+                {
+                    Success = false,
+                    Message = "User not found!"
+                };
+            }
+
+            if (!string.IsNullOrWhiteSpace(dto.UserName))
+            {
+                user.UserName = dto.UserName;   // If dto has a non-null UserName field, update the username, otherwise leave it as is
+            }
+            if (dto.BanLifted == true && user.IsBanned == true)
+            { 
+                user.IsBanned = false;  // If BanLifted is true, IsBanned will be set to false to un-ban the player
+            }
+
+            user.LastUpdatedAt = DateTimeOffset.UtcNow.ToUniversalTime();
+
+            await _context.SaveChangesAsync();
+
+            return new GeneralResponseDto
+            {
+                Success = true,
+                Message = "User info updated successfuly"
+            };
+        }
+
+        //aaa TODO: UserUpdateByUserAsync
+        //aaa TODO: UserUpdateByAdminAsync
 
         private static UserResponseDto MapToResponseDto(User user)
         {

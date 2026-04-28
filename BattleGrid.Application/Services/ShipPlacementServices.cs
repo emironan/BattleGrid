@@ -1,11 +1,8 @@
-﻿using System;
-using Microsoft.EntityFrameworkCore;
-using BattleGrid.Domain.Entities;
-using BattleGrid.Application.Interfaces;
-using BattleGrid.Contracts.ResponseDtos;
-using BattleGrid.Infrastructure.Data;
-using Microsoft.EntityFrameworkCore.Storage;
+﻿using BattleGrid.Application.Interfaces;
 using BattleGrid.Contracts.RequestDtos;
+using BattleGrid.Contracts.ResponseDtos;
+using BattleGrid.Domain.Entities;
+using BattleGrid.Infrastructure.Data;
 
 namespace BattleGrid.Application.Services
 {
@@ -18,8 +15,16 @@ namespace BattleGrid.Application.Services
             _context = context;
         }
 
+        //aaa TODO: PlayerID and (if possible) MatchID should be taken from route and be hidden from user with [JsonIgnore]
+        // PlayerID will already be saved at localStorage of the browser as UserID
+        // We will see if we can save the MatchID to sessionStorage once SignalR adds the user to a match hub.
+        // Last part has to wait till we implement the SignalR and hubs
         public async Task<GeneralResponseDto> PlaceShipAsync(PlaceShipRequestDto dto)
         {
+
+            //aaa TODO add a check to make sure player can not place more than allowed number of ships of any ship type
+            // Check PlayerID, MatchID, and ShipID all together and compare it to max allowed numbers of each type with unique ShipID
+
             var result = await _context.ShipPlacement.AddAsync(new ShipPlacement
             {
                 PlayerID = dto.PlayerID,
@@ -29,6 +34,7 @@ namespace BattleGrid.Application.Services
                 StartY = dto.StartY,
                 IsVertical = dto.IsVertical
             });
+
             await _context.SaveChangesAsync();
 
             if (result == null)

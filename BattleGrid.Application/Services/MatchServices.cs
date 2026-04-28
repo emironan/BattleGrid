@@ -1,11 +1,7 @@
-﻿using System;
-using Microsoft.EntityFrameworkCore;
-using BattleGrid.Domain.Entities;
-using BattleGrid.Application.Interfaces;
+﻿using BattleGrid.Application.Interfaces;
 using BattleGrid.Contracts.ResponseDtos;
 using BattleGrid.Infrastructure.Data;
-using Microsoft.EntityFrameworkCore.Storage;
-using BattleGrid.Contracts.RequestDtos;
+using Microsoft.EntityFrameworkCore;
 
 namespace BattleGrid.Application.Services
 {
@@ -28,17 +24,26 @@ namespace BattleGrid.Application.Services
             return players;
         }
 
-        public async Task<bool> ValidatePlayerAsync(int matchId, int playerId)
+        public async Task<GeneralResponseDto> ValidatePlayerAsync(int matchId, int playerId)
         {
-            var PlayersOfAMatch = await _context.Match
+            var playedInMatch = await _context.Match
                 .Where(m => m.MatchID == matchId && (m.Player1ID == playerId || m.Player2ID == playerId))
+                .AsNoTracking()
                 .FirstOrDefaultAsync();
 
-            if(PlayersOfAMatch == null)
+            if(playedInMatch == null)
             {
-                return false;
+                return new GeneralResponseDto
+                {
+                    Success = false,
+                    Message = "Requesting user is not a player in this match."
+                };
             }
-            return true;
+            return new GeneralResponseDto
+            {
+                Success = true,
+                Message = "User is a player in this match."
+            };
         }
     }
 }

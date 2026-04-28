@@ -34,20 +34,17 @@ namespace BattleGrid.API.Controllers
             try
             {
                 // Check if the player sending the request is actually a player in that match
-                bool IsPlayer = await _matchServices.ValidatePlayerAsync(dto.MatchID, dto.PlayerID);
+                var IsPlayer = await _matchServices.ValidatePlayerAsync(dto.MatchID, dto.PlayerID);
                 
-                if(!IsPlayer)
+                if(!IsPlayer.Success)
                 {
                     throw new UnauthorizedAccessException("Requesting user is not a player in this match!");
                 }
-
-                //aaa TODO add a check to make sure player can not place more than allowed of any ship type
 
                 var result = await _shipPlacementServices.PlaceShipAsync(dto);
 
                 if (!result.Success)
                 {
-                    //_logger.LogError("Registration failed - email already exists: {Email}", dto.Email);
                     return BadRequest($"An error occured while placing the ship: {result.Message}");
                 }
 

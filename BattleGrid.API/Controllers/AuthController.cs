@@ -48,46 +48,74 @@ namespace BattleGrid.API.Controllers
         [HttpPost("login")]
         public async Task<IActionResult> Login([FromBody] LoginRequestDto dto)
         {
-            var tokenResponse = await _authServices.LoginAsync(dto);
-
-            if (tokenResponse == null)
+            try
             {
-                return Unauthorized("Incorrect username/email or password");
+                var tokenResponse = await _authServices.LoginAsync(dto);
+
+                if (tokenResponse == null)
+                {
+                    return Unauthorized("Incorrect username/email or password.");
+                }
+
+                Response.Cookies.Append(
+                    "AccessToken",
+                    tokenResponse.AccessToken,
+                    new CookieOptions
+                    {
+                        HttpOnly = true,
+                        Expires = tokenResponse.ATExpiresAt,
+                        Secure = true,
+                        SameSite = SameSiteMode.Strict,
+                        Path = "/"
+                    });
+
+                Response.Cookies.Append(
+                    "RefreshToken",
+                    tokenResponse.RefreshToken,
+                    new CookieOptions
+                    {
+                        HttpOnly = true,
+                        Expires = tokenResponse.RTExpiresAt,
+                        Secure = true,
+                        SameSite = SameSiteMode.Strict,
+                        Path = "/"
+                    });
+
+                return Ok(new
+                {
+                    message = "Login Successful.",
+                    accessToken = tokenResponse.AccessToken,
+                    accessTokenExpiration = tokenResponse.ATExpiresAt,
+                    refreshToken = tokenResponse.RefreshToken,
+                    refreshTokenExpiration = tokenResponse.RTExpiresAt
+                });
+            }
+            catch
+            {
+                return StatusCode(500, "An error occured during login.");
             }
 
-            Response.Cookies.Append(
-                "AccessToken",
-                tokenResponse.AccessToken,
-                new CookieOptions
-                {
-                    HttpOnly = true,
-                    Expires = tokenResponse.ATExpiresAt,
-                    Secure = true,
-                    SameSite = SameSiteMode.Strict,
-                    Path = "/"
-                });
+        }
 
-            Response.Cookies.Append(
-                "RefreshToken",
-                tokenResponse.RefreshToken,
-                new CookieOptions
-                {
-                    HttpOnly = true,
-                    Expires = tokenResponse.RTExpiresAt,
-                    Secure = true,
-                    SameSite = SameSiteMode.Strict,
-                    Path = "/"
-                });
-
-            return Ok(new
+        [HttpPatch("password")]
+        public async Task<IActionResult> UpdatePassword([FromBody] PasswordUpdateRequestDto dto, int userId)
+        {
+            try
             {
-                message = "Login Successful",
-                accessToken = tokenResponse.AccessToken,
-                accessTokenExpiration = tokenResponse.ATExpiresAt,
-                refreshToken = tokenResponse.RefreshToken,
-                refreshTokenExpiration = tokenResponse.RTExpiresAt
-            });
+                dto.UserID = userId;
 
+                var result = await _authServices.UpdatePasswordAsync(dto);
+                if (!result.Success)
+                {
+                    return BadRequest($"An error occured while updating password: {result.Message}");
+                }
+
+                return Ok(result.Message);
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, $"An error occured while updating password: {ex.Message}");
+            }
         }
     }
 }
