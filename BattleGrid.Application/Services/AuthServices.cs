@@ -28,11 +28,16 @@ namespace BattleGrid.Application.Services
         public async Task<GeneralResponseDto> RegisterAsync(RegisterRequestDto dto)
         {
             // Check if a user with the same email already exists
-            var properEmail = dto.Email.Trim().ToLowerInvariant();
+            // Make sure email is in a proper format (trimmed and lowercase) before checking for existing users
+            dto.Email = await NormalizeLoginInfoAsync(dto.Email);
 
             var exists = await _context.User
+                /* NOTE: We won't make any changes to this user entity in this service.
+                 * We only need to read the user info and verify the email does not already exist in our DB.
+                 * So, add no tracking (AsNoTracking()) to improve performance.
+                 */
                 .AsNoTracking()
-                .AnyAsync(x => x.Email == properEmail);
+                .AnyAsync(x => x.Email == dto.Email);
 
             if (exists)
             {
@@ -43,9 +48,11 @@ namespace BattleGrid.Application.Services
                 };
             }
 
-            // Check if the provided UserName is not null and if it already exists
+            // Check if the DTO's UserName field is not null and if the provided UserName already exists
             if (dto.UserName != null)
             {
+                dto.UserName = await NormalizeLoginInfoAsync(dto.UserName);
+
                 var userNameExists = await _context.User
                     .AsNoTracking()
                     .AnyAsync(x => x.UserName == dto.UserName);
@@ -75,9 +82,9 @@ namespace BattleGrid.Application.Services
             // Create new user
             var newUser = new User
             {
-                UserName = dto.UserName,
-                Email = properEmail,
-                PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
+                UserName = dto.UserName,                                        // Save the properly formatted username (if it is not null)
+                Email = dto.Email,                                              // Save the properly formatted email
+                PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),    // and the hashed password
             };
 
             await _context.User.AddAsync(newUser);
@@ -92,17 +99,18 @@ namespace BattleGrid.Application.Services
 
         public async Task<GeneralResponseDto> VerifyPasswordAsync(LoginRequestDto dto)
         {
-            // Get the user info for the user with the matching email or username (or ID for internal service uses)
-            /* Did not use userServices.GetByLoginInfoAsync 
-             * because it returns UserResponseDto 
-             * and this dto does not include user's PasswordHash
+            dto.LoginInfo = await NormalizeLoginInfoAsync(dto.LoginInfo);
+            
+            // Get the user info for the user with the matching email or username (or ID for background service uses)
+            /* NOTE: Did not use userServices.GetByLoginInfoAsync because it returns UserResponseDto 
+             * and this DTO does not include user's PasswordHash
              * Instead, called the entire user info with EF Core context directly
              */
             var user = await _context.User
-                .Where(u => u.UserName == dto.LoginInfo 
-                         || u.Email == dto.LoginInfo 
+                .Where(u => u.UserName == dto.LoginInfo
+                         || u.Email == dto.LoginInfo
                          || u.UserID == dto.UserID)
-                .AsNoTracking()
+                .AsNoTracking() 
                 .FirstOrDefaultAsync();
             
             if (user == null)
@@ -148,6 +156,8 @@ namespace BattleGrid.Application.Services
         // Return type will be replaced with TokenResponseDto, once we set the services for access and refresh tokens
         public async Task<TokenResponseDto> LoginAsync(LoginRequestDto dto)
         {
+            dto.LoginInfo = await NormalizeLoginInfoAsync(dto.LoginInfo);
+
             // Not bool but var because VerifyPasswordAsync returns GeneralResponseDto with bool success and string message fields
             var authSuccess = await VerifyPasswordAsync(dto); 
 
@@ -218,9 +228,16 @@ namespace BattleGrid.Application.Services
                 throw new UnauthorizedAccessException($"You are banned {detail}");
             }
 
+            /* NOTE: Since we might update the session entity, we will not use AsNoTracking() here!
+             * We will have only one active session per user.
+             * If there is already an active session for the user, 
+             * we will update the session with new access and refresh tokens.
+             */
             var existingSession = await _context.Session
                 .Where(s => s.UserID == user.UserID)
                 .FirstOrDefaultAsync();
+
+            user.Email = await NormalizeLoginInfoAsync(user.Email);
 
             string accessToken = await _jwtHelper.GenerateAccessToken(user.Email);
             string refreshToken = await _jwtHelper.GenerateRefreshToken();
@@ -245,6 +262,7 @@ namespace BattleGrid.Application.Services
 
                 await _context.SaveChangesAsync();
 
+                // Finish login process by returning the tokens and expiration dates.
                 return new TokenResponseDto
                 {
                     AccessToken = accessToken,
@@ -280,11 +298,11 @@ namespace BattleGrid.Application.Services
 
         public async Task<GeneralResponseDto> UpdatePasswordAsync(PasswordUpdateRequestDto dto)
         {
-            var properEmail = dto.Email.Trim().ToLowerInvariant();
+            dto.Email = await NormalizeLoginInfoAsync(dto.Email);
 
             var user = await _context.User
                 .Where(u => u.UserID == dto.UserID
-                         && u.Email == properEmail)
+                         && u.Email == dto.Email)
                 .FirstOrDefaultAsync();
 
             if (user == null)
@@ -299,7 +317,7 @@ namespace BattleGrid.Application.Services
             var verificationDto = new LoginRequestDto
             {
                 UserID = dto.UserID,
-                LoginInfo = user.Email,
+                LoginInfo = dto.Email,
                 Password = dto.OldPassword
             };
 
@@ -347,6 +365,20 @@ namespace BattleGrid.Application.Services
                 Success = true,
                 Message = "Password updated successfuly."
             };
+        }
+
+        // Take loginInfo (can be UserName or Email) and normalize it to use in login and registration services.
+        public async Task<string> NormalizeLoginInfoAsync(string loginInfo)
+        {
+            // first, trim the login info to remove leading and trailing whitespace
+            var normalizedLoginInfo = loginInfo.Trim();
+
+            // If it is an email (user names can not contain "@" and ".") make it lowercase.
+            if (normalizedLoginInfo.Contains("@") && normalizedLoginInfo.Contains("."))
+            {
+                normalizedLoginInfo = normalizedLoginInfo.ToLowerInvariant();
+            }
+            return normalizedLoginInfo;
         }
     }
 }
