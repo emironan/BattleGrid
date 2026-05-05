@@ -1,0 +1,112 @@
+@page "/"
+@inject ApiService Api
+@inject AuthStateService Auth
+@inject NavigationManager Nav
+
+<PageTitle>BattleGrid — Command Center</PageTitle>
+
+@if (Auth.IsInitialized && Auth.IsLoggedIn)
+{
+    <div class="loading-screen">
+        <p class="muted">Redirecting to dashboard...</p>
+    </div>
+}
+else
+{
+<div class="hero">
+    <div class="hero-grid-overlay"></div>
+    <div class="hero-content">
+        <div class="hero-badge">NAVAL COMMAND SYSTEM v1.0</div>
+        <h1 class="hero-title">BATTLE<span class="accent">GRID</span></h1>
+        <p class="hero-subtitle">Multiplayer Battleship Strategy Platform</p>
+        <div class="hero-actions">
+            @if (Auth.IsLoggedIn)
+            {
+                <a href="/dashboard" class="btn btn-primary btn-lg">OPEN DASHBOARD</a>
+                <a href="/shiptypes" class="btn btn-outline btn-lg">VIEW FLEET</a>
+            }
+            else
+            {
+                <a href="/register" class="btn btn-primary btn-lg">REGISTER OPERATOR</a>
+                <a href="/login" class="btn btn-outline btn-lg">LOGIN</a>
+            }
+        </div>
+    </div>
+</div>
+
+<div class="section">
+    <h2 class="section-title"><span class="accent">◈</span> SYSTEM STATUS</h2>
+    <div class="cards-grid">
+        <div class="card @(apiOnline ? "card-success" : "card-danger")">
+            <div class="card-header">
+                <span class="card-icon">⬡</span>
+                <span class="card-label">API STATUS</span>
+            </div>
+            <div class="card-body">
+                @if (apiLoading)
+                {
+                    <span class="muted">Pinging...</span>
+                }
+                else
+                {
+                    <span class="status-badge @(apiOnline ? "online" : "offline")">
+                        @(apiOnline ? "● ONLINE" : "● OFFLINE")
+                    </span>
+                    <p class="muted mt-sm">@(apiOnline ? "API responding at localhost:4744" : "API unreachable")</p>
+                }
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-icon">◉</span>
+                <span class="card-label">OPERATOR</span>
+            </div>
+            <div class="card-body">
+                @if (Auth.IsLoggedIn)
+                {
+                    <span class="status-badge online">● AUTHENTICATED</span>
+                    <p class="muted mt-sm">@(Auth.CurrentUser?.UserName ?? Auth.CurrentUser?.Email)</p>
+                }
+                else
+                {
+                    <span class="status-badge offline">● NOT LOGGED IN</span>
+                    <p class="muted mt-sm"><a href="/login" class="link">Login to access full system</a></p>
+                }
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-icon">⬢</span>
+                <span class="card-label">DATABASE</span>
+            </div>
+            <div class="card-body">
+                <span class="status-badge online">● CONNECTED</span>
+                <p class="muted mt-sm">PostgreSQL</p>
+            </div>
+        </div>
+    </div>
+</div>
+}
+
+@code {
+    bool apiLoading = true;
+    bool apiOnline = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Auth.IsInitialized && Auth.IsLoggedIn)
+        {
+            Nav.NavigateTo("/dashboard");
+            return;
+        }
+
+        if (firstRender)
+        {
+            apiOnline = await Api.CheckApiHealthAsync();
+            apiLoading = false;
+            StateHasChanged();
+        }
+    }
+}

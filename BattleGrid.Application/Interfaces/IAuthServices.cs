@@ -6,8 +6,8 @@ namespace BattleGrid.Application.Interfaces
     public interface IAuthServices
     {
         Task<GeneralResponseDto> RegisterAsync(RegisterRequestDto dto);
+        Task<LoginResponseDto> LoginAsync(LoginRequestDto dto);
         Task<GeneralResponseDto> VerifyPasswordAsync(LoginRequestDto dto);
-        Task<TokenResponseDto> LoginAsync(LoginRequestDto dto);
         Task<GeneralResponseDto> UpdatePasswordAsync(PasswordUpdateRequestDto dto);
     }
 }

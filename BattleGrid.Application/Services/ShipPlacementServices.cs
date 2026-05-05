@@ -42,14 +42,14 @@ namespace BattleGrid.Application.Services
                 return new GeneralResponseDto
                 {
                     Success = false,
-                    Message = "Gemi yerleştirilirken bir hata oluştu."
+                    Message = "An error occured during ship placement!"
                 };
             }
 
             return new GeneralResponseDto
             {
                 Success = true,
-                Message = "Gemi başarıyla yerleştirildi."
+                Message = "Ship placed succesfully."
             };
         }
     }

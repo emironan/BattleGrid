@@ -1,0 +1,82 @@
+﻿using System.ComponentModel.DataAnnotations;
+using System.Text.Json.Serialization;
+
+namespace BattleGrid.Contracts.RequestDtos
+{
+    public class BanRequestDto
+    {
+        [JsonIgnore]
+        [Required]
+        public int AdminID { get; set; }
+
+        //aaa We may or may not need UsedID directly. We will uncomment this if the need arises
+        // public int UserID { get; set; }
+
+        // Email or UserName of the user to be banned
+        [Required]
+        public string PlayerInfo { get; set; } = string.Empty;
+
+        [Required]
+        public string BanReason { get; set; } = string.Empty;
+
+        [Required]
+        public bool IsTemporary { get; set; } = false;  // Permanent ban by default
+
+        public DateTimeOffset BannedAt { get; set; } = DateTimeOffset.UtcNow.ToUniversalTime();
+
+        public TimeSpan? Duration { get; set; } = TimeSpan.FromDays(36500); // 100 years by default for permanent ban
+
+        public DateTimeOffset? BannedUntil { get; set; }
+    }
+
+    public class UndoPermanentBanRequestDto
+    {
+        [JsonIgnore]
+        [Required]
+        public int AdminID { get; set; } // Will also be used as RevertingAdminID
+
+        //aaa We may or may not need UsedID directly. We will uncomment this if the need arises
+        // public int UserID { get; set; }
+
+        // Email or UserName of the user to be banned
+        [Required]
+        public string UserInfo { get; set; } = string.Empty;
+
+        // Since we are undoing a ban, this will always be true
+        [JsonIgnore]
+        [Required]
+        public bool IsReverted { get; set; } = true;
+
+        [Required]
+        public string Reason { get; set; } = string.Empty;
+    }
+
+    public class UpdateBanStatusRequestDto
+    {
+        [JsonIgnore]
+        [Required]
+        public int AdminID { get; set; }
+
+        //aaa We may or may not need UsedID directly. We will uncomment this if the need arises
+        // public int UserID { get; set; }
+
+        // Email or UserName of the user to be banned
+        [Required]
+        public string UserInfo { get; set; } = string.Empty;
+
+        [Required]
+        public string BanReason { get; set; } = string.Empty;
+
+        [Required]
+        public bool IsReverted { get; set; }
+
+        [Required]
+        public bool? IsTemporary { get; set; }
+
+        public DateTimeOffset? BannedAt { get; set; }
+
+        public TimeSpan? Duration { get; set; }
+
+        public DateTimeOffset? BannedUntil { get; set; }
+    }
+}

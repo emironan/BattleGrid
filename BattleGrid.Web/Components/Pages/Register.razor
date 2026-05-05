@@ -1,0 +1,111 @@
+@page "/register"
+@inject ApiService Api
+@inject NavigationManager Nav
+
+<PageTitle>Register — BattleGrid</PageTitle>
+
+<div class="auth-page">
+    <div class="auth-card">
+        <div class="auth-header">
+            <div class="auth-icon">⬡</div>
+            <h1>REGISTER OPERATOR</h1>
+            <p class="muted">Create your BattleGrid account</p>
+        </div>
+
+        @if (success)
+        {
+            <div class="alert alert-success">
+                <span>✔</span> Registration successful! <a href="/login" class="link">Login here</a>
+            </div>
+        }
+        else
+        {
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="alert alert-danger">
+                    <span>✘</span> @errorMessage
+                </div>
+            }
+
+            <EditForm Model="model" OnValidSubmit="HandleRegister">
+                <div class="form-group">
+                    <label class="form-label">USERNAME <span class="muted">(optional)</span></label>
+                    <input class="form-control" placeholder="e.g. Captain_Zero" @bind="model.UserName" />
+                    <small class="form-hint">Letters, numbers, and underscores only</small>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">EMAIL <span class="required">*</span></label>
+                    <input class="form-control" type="email" placeholder="operator@fleet.com" @bind="model.Email" />
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">PASSWORD <span class="required">*</span></label>
+                    <input class="form-control" type="password" placeholder="••••••••" @bind="model.Password" />
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">CONFIRM PASSWORD <span class="required">*</span></label>
+                    <input class="form-control" type="password" placeholder="••••••••" @bind="confirmPassword" />
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-full" disabled="@loading">
+                    @if (loading)
+                    {
+                        <span>PROCESSING...</span>
+                    }
+                    else
+                    {
+                        <span>REGISTER</span>
+                    }
+                </button>
+            </EditForm>
+
+            <div class="auth-footer">
+                <p class="muted">Already registered? <a href="/login" class="link">Login here</a></p>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    RegisterRequestDto model = new();
+    string confirmPassword = string.Empty;
+    string errorMessage = string.Empty;
+    bool loading = false;
+    bool success = false;
+
+    async Task HandleRegister()
+    {
+        errorMessage = string.Empty;
+
+        if (string.IsNullOrWhiteSpace(model.Email))
+        {
+            errorMessage = "Email is required.";
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(model.Password))
+        {
+            errorMessage = "Password is required.";
+            return;
+        }
+        if (model.Password != confirmPassword)
+        {
+            errorMessage = "Passwords do not match.";
+            return;
+        }
+
+        loading = true;
+        var (ok, message) = await Api.RegisterAsync(model);
+        loading = false;
+
+        if (ok)
+        {
+            success = true;
+        }
+        else
+        {
+            errorMessage = message;
+        }
+    }
+}

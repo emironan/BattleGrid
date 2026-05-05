@@ -96,3 +96,12 @@ CREATE TRIGGER validate_ship_count_trigger
     BEFORE INSERT OR UPDATE ON "ShipPlacement"
     FOR EACH ROW
     EXECUTE FUNCTION validate_ship_count();
+
+--------------------------------------------------------------------------------------------------------------------------------
+
+--aaa TODO: Implement a SP and a trigger that prevents any updates to it, 
+--         after a BanList entry is already marked as reverted
+
+--aaa TODO: Implement a SP and a trigger to update BannedUntil field of 
+--         BanList entries that are temporary, upon insertion, 
+--         and based on the entry's BannedAt and Duration fields

@@ -26,6 +26,21 @@ namespace BattleGrid.Application.Services
 
         public async Task<GeneralResponseDto> ValidatePlayerAsync(int matchId, int playerId)
         {
+            var match = await _context.Match
+                .Where(m => m.MatchID == matchId)
+                .AsNoTracking()
+                .AnyAsync();
+
+            // If the given matchId does not exist in DB
+            if (!match)
+            {
+                return new GeneralResponseDto
+                {
+                    Success = false,
+                    Message = "Match not found!"
+                };
+            }
+
             var playedInMatch = await _context.Match
                 .Where(m => m.MatchID == matchId && (m.Player1ID == playerId || m.Player2ID == playerId))
                 .AsNoTracking()

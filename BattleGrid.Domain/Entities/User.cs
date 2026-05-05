@@ -10,6 +10,8 @@ public sealed class User
     public string PasswordHash { get; set; } = "";
     public bool IsAdmin { get; set; } = false;
     public bool IsBanned { get; set; } = false;
+    public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? LastUpdatedAt { get; set; }
+    public string? UpdateReason { get; set; }
 }

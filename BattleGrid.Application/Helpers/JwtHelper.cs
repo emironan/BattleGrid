@@ -10,20 +10,26 @@ using System.Text;
 
 namespace BattleGrid.Application.Helpers
 {
-    public class JwtHelper
+    public class JwtHelper : IJwtHelper
     {
         private readonly IConfiguration _config;
         private readonly IUserServices _userServices;
+        private readonly INormalizationHelper _normalizationHelper;
 
-        public JwtHelper(IConfiguration config, IUserServices userServices)
+        public JwtHelper(IConfiguration config, 
+                         IUserServices userServices,
+                         INormalizationHelper normalizationHelper)
         {
             _config = config;
             _userServices = userServices;
+            _normalizationHelper = normalizationHelper;
         }
 
         // Generate a new access token with JWT for players
-        public async Task<string> GenerateAccessToken(string loginInfo)
+        public async Task<string> GenerateAccessTokenAsync(string loginInfo)
         {
+            loginInfo = await _normalizationHelper.NormalizeLoginInfoAsync(loginInfo);
+
             var jwtSection = _config.GetSection("Jwt");
             var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSection["SigningKey"]!));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
@@ -36,9 +42,7 @@ namespace BattleGrid.Application.Helpers
                 throw new NullReferenceException("There is no such user to assign access permissions!");
             }
 
-            bool isBanned = user.IsBanned;
-
-            if (isBanned)
+            if (user.IsBanned)
             {
                 throw new SecurityException("Can not provide access to banned players!");
             }
@@ -49,7 +53,7 @@ namespace BattleGrid.Application.Helpers
             {
                 new Claim("userId", user.UserID.ToString()),
                 // This can be null an cause problems. We should implement that random and unique UserNameGenerator
-                //new Claim(ClaimTypes.UserData, "UserName", user.UserName.ToString()),
+                //new Claim("user name", user.UserName.ToString()),
                 new Claim(JwtRegisteredClaimNames.Email, user.Email),
                 new Claim("user role", role),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
@@ -67,7 +71,7 @@ namespace BattleGrid.Application.Helpers
         }
 
         // Generate a random refresh token encoded in base64
-        public async Task<string> GenerateRefreshToken()
+        public async Task<string> GenerateRefreshTokenAsync()
         {
             var randomNumber = new byte[64];
             using var rng = RandomNumberGenerator.Create();
@@ -113,7 +117,7 @@ namespace BattleGrid.Application.Helpers
         public DateTimeOffset GetRefreshTokenExpiration()
         {
             var jwtSection = _config.GetSection("Jwt");
-            return DateTimeOffset.Now.AddDays(double.Parse(jwtSection["RefreshTokenDays"] ?? "7")).ToUniversalTime();
+            return DateTimeOffset.Now.AddDays(double.Parse(jwtSection["RefreshTokenDays"] ?? "15")).ToUniversalTime();
         }
 
         // Get the principal from a token with lifetime validation

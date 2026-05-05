@@ -1,0 +1,56 @@
+﻿@implements IDisposable
+@inject AuthStateService Auth
+@inject NavigationManager Nav
+
+<nav class="navbar">
+    <a href="/" class="navbar-brand">
+        <span class="brand-icon">⬡</span>
+        <span class="brand-text">BATTLE<span class="brand-accent">GRID</span></span>
+    </a>
+
+    <div class="navbar-links">
+        @if (!Auth.IsLoggedIn)
+        {
+            <NavLink href="/" class="nav-link" Match="NavLinkMatch.All">HOME</NavLink>
+        }
+        <NavLink href="/shiptypes" class="nav-link">FLEET</NavLink>
+        <NavLink href="/users" class="nav-link">PERSONNEL</NavLink>
+
+        @if (Auth.IsLoggedIn)
+        {
+            <NavLink href="/dashboard" class="nav-link">DASHBOARD</NavLink>
+            <span class="nav-user">
+                <span class="status-dot online"></span>
+                @(Auth.CurrentUser?.UserName ?? Auth.CurrentUser?.Email)
+                @if (Auth.CurrentUser?.IsAdmin == true)
+                {
+                    <span class="badge badge-admin">ADMIN</span>
+                }
+            </span>
+            <button class="btn btn-sm btn-danger" @onclick="Logout">LOGOUT</button>
+        }
+        else
+        {
+            <NavLink href="/login" class="nav-link">LOGIN</NavLink>
+            <NavLink href="/register" class="btn btn-sm btn-primary nav-btn">REGISTER</NavLink>
+        }
+    </div>
+</nav>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Auth.OnChange += StateHasChanged;
+    }
+
+    async Task Logout()
+    {
+        await Auth.LogoutAsync();
+        Nav.NavigateTo("/");
+    }
+
+    public void Dispose()
+    {
+        Auth.OnChange -= StateHasChanged;
+    }
+}

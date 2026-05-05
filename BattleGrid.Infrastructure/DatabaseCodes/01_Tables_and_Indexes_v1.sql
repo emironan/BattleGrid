@@ -13,11 +13,12 @@ CREATE TABLE "User" (
     -- We will store the password hash as a string. 
     -- The actual hashing will be done in the application layer using a strong hashing algorithm, BCrypt
     "PasswordHash" VARCHAR(255) NOT NULL,
-    -- 0 = Player, 1 = AdminPlayer, 2 = Admin
     "IsAdmin" BOOLEAN NOT NULL DEFAULT FALSE,
     "IsBanned" BOOLEAN NOT NULL DEFAULT FALSE,
+    "IsActive" BOOLEAN NOT NULL DEFAULT TRUE,
     "CreatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    "LastUpdatedAt" TIMESTAMPTZ
+    "LastUpdatedAt" TIMESTAMPTZ,
+    "UpdateReason" VARCHAR(255)
 );
 
 CREATE TABLE "PlayerStat" (
@@ -114,11 +115,12 @@ CREATE TABLE "BanList" (
     "BanID" SERIAL PRIMARY KEY,
     "AdminID" INT NOT NULL REFERENCES "User"("UserID"),
     "PlayerID" INT NOT NULL REFERENCES "User"("UserID"),
+    "BanReason" VARCHAR(255) NOT NULL,
     "IsReverted" BOOLEAN NOT NULL DEFAULT FALSE,
     -- 0 means a system service automatically reverted it when the duration ended.
     -- It only works with temporary bans! If we see a 0 as RevertingAdminID for a permanent ban, we have a problem!
     "RevertingAdminID" INT, 
-    "Reason" VARCHAR(255) NOT NULL,
+    "RevertingReason" VARCHAR(255),
     "IsTemporary" BOOLEAN NOT NULL DEFAULT FALSE,
     "BannedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "Duration" INTERVAL, -- Only applicable for Temporary bans

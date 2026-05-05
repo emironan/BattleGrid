@@ -1,0 +1,101 @@
+@page "/users"
+@inject ApiService Api
+
+<PageTitle>Personnel — BattleGrid</PageTitle>
+
+<div class="page-header">
+    <h1><span class="accent">◈</span> PERSONNEL DATABASE</h1>
+    <p class="muted">All registered operators in the system</p>
+</div>
+
+@if (loading)
+{
+    <div class="loading-state">
+        <div class="radar-ping"></div>
+        <p class="muted">Fetching personnel records...</p>
+    </div>
+}
+else if (errorMessage != null)
+{
+    <div class="alert alert-danger">
+        <span>✘</span> @errorMessage
+    </div>
+}
+else if (users == null || users.Count == 0)
+{
+    <div class="alert alert-info">No operators found in database.</div>
+}
+else
+{
+    <div class="table-toolbar">
+        <span class="muted">@users.Count operator(s) on record</span>
+        <button class="btn btn-outline btn-sm" @onclick="Reload">↻ REFRESH</button>
+    </div>
+
+    <div class="table-wrapper">
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>USERNAME</th>
+                    <th>EMAIL</th>
+                    <th>ROLE</th>
+                    <th>STATUS</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var user in users)
+                {
+                    <tr class="@(user.IsBanned ? "row-danger" : "")">
+                        <td class="cell-id">#@user.UserID</td>
+                        <td>@(user.UserName ?? "—")</td>
+                        <td class="cell-email">@user.Email</td>
+                        <td>
+                            @if (user.IsAdmin)
+                            {
+                                <span class="badge badge-admin">ADMIN</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-player">PLAYER</span>
+                            }
+                        </td>
+                        <td>
+                            @if (user.IsBanned)
+                            {
+                                <span class="badge badge-danger">BANNED</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-success">ACTIVE</span>
+                            }
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    List<UserResponseDto>? users;
+    bool loading = true;
+    string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadUsers();
+    }
+
+    async Task LoadUsers()
+    {
+        loading = true;
+        errorMessage = null;
+        users = await Api.GetAllUsersAsync();
+        if (users == null)
+            errorMessage = "Failed to load personnel data. Is the API running?";
+        loading = false;
+    }
+
+    async Task Reload() => await LoadUsers();
+}

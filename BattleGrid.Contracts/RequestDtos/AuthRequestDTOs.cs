@@ -17,8 +17,9 @@ namespace BattleGrid.Contracts.RequestDtos
     public class LoginRequestDto
     {
 
-        // Users will not see and use UserID. We may use it with inner services
+        // Users will not see and use UserID. We may use it with internal services
         // So, it is nullable and hidden from users while they are filling forms
+        // And we may pass it to controller via route and put it in here to use in internal systems
         [JsonIgnore]
         public int? UserID { get; set; }
 
@@ -32,6 +33,8 @@ namespace BattleGrid.Contracts.RequestDtos
 
     public class PasswordUpdateRequestDto
     {
+        // It is required but ofcourse, we will not ask the user for their ID.
+        // We will take it from route, access token cookie or localStorage
         [Required]
         [JsonIgnore]
         public int UserID { get; set; }
