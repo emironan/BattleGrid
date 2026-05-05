@@ -10,10 +10,13 @@ namespace BattleGrid.Application.Services
     public class UserServices : IUserServices
     {
         private readonly BattleGridDbContext _context;
+        private readonly INormalizationHelper _normalizationHelper;
 
-        public UserServices(BattleGridDbContext context)
+        public UserServices(BattleGridDbContext context,
+                            INormalizationHelper normalizationHelper)
         {
             _context = context;
+            _normalizationHelper = normalizationHelper;
         }
 
         public async Task<List<UserResponseDto>> GetAllUsersAsync()
@@ -39,13 +42,7 @@ namespace BattleGrid.Application.Services
         // Find a user via UserName or Email
         public async Task<UserResponseDto?> GetByLoginInfoAsync(string loginInfo)
         {
-            string normalizedLoginInfo = loginInfo.Trim();
-
-            // If it is an email make it lowercase and standardize it
-            if(normalizedLoginInfo.Contains("@") && normalizedLoginInfo.Contains("."))
-            {
-                normalizedLoginInfo = normalizedLoginInfo.ToLowerInvariant();
-            }
+            string normalizedLoginInfo = await _normalizationHelper.NormalizeLoginInfoAsync(loginInfo);
 
             var user = await _context.User
                 .Where(c => c.UserName == normalizedLoginInfo || c.Email == normalizedLoginInfo)
@@ -68,6 +65,7 @@ namespace BattleGrid.Application.Services
             {
                 user.PasswordHash = BCrypt.Net.BCrypt.HashPassword(user.PasswordHash);
                 user.LastUpdatedAt = DateTimeOffset.UtcNow.ToUniversalTime();
+                user.UpdateReason = "Password hashed by the system";
 
                 await _context.SaveChangesAsync();
             }
@@ -75,6 +73,7 @@ namespace BattleGrid.Application.Services
             // Get the same user again with updated password field
             var userNew = await _context.User
                 .Where(c => c.UserID == userId)
+                .AsNoTracking()
                 .FirstOrDefaultAsync()
                 ?? throw new Exception("User not found!"); // Redundant, after all the checks to see if the user is null
 
@@ -105,10 +104,12 @@ namespace BattleGrid.Application.Services
             if (!string.IsNullOrWhiteSpace(dto.UserName))
             {
                 user.UserName = dto.UserName;   // If dto has a non-null UserName field, update the username, otherwise leave it as is
+                user.UpdateReason = "User name is updated by the system.";
             }
             if (dto.BanLifted == true && user.IsBanned == true)
             { 
-                user.IsBanned = false;  // If BanLifted is true, IsBanned will be set to false to un-ban the player
+                user.IsBanned = false;          // If BanLifted is true, IsBanned will be set to false to un-ban the player
+                user.UpdateReason = "User's ban is lifted by the system.";
             }
 
             user.LastUpdatedAt = DateTimeOffset.UtcNow.ToUniversalTime();
@@ -133,7 +134,8 @@ namespace BattleGrid.Application.Services
                 UserName = user.UserName,
                 Email = user.Email,
                 IsAdmin = user.IsAdmin,
-                IsBanned = user.IsBanned
+                IsBanned = user.IsBanned,
+                IsActive = user.IsActive
             };
         }
     }

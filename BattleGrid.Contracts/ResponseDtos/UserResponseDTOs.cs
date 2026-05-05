@@ -13,5 +13,7 @@ namespace BattleGrid.Contracts.ResponseDtos
         public bool IsAdmin { get; set; }
 
         public bool IsBanned { get; set; }
+
+        public bool IsActive { get; set; }
     }
 }

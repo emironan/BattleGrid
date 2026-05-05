@@ -1,0 +1,96 @@
+@page "/shiptypes"
+@inject ApiService Api
+
+<PageTitle>Fleet Registry — BattleGrid</PageTitle>
+
+<div class="page-header">
+    <h1><span class="accent">◈</span> FLEET REGISTRY</h1>
+    <p class="muted">Available ship classes for deployment</p>
+</div>
+
+@if (loading)
+{
+    <div class="loading-state">
+        <div class="radar-ping"></div>
+        <p class="muted">Loading fleet manifest...</p>
+    </div>
+}
+else if (errorMessage != null)
+{
+    <div class="alert alert-danger">
+        <span>✘</span> @errorMessage
+    </div>
+}
+else if (ships == null || ships.Count == 0)
+{
+    <div class="alert alert-info">No ships in fleet registry.</div>
+}
+else
+{
+    <div class="ships-grid">
+        @foreach (var ship in ships)
+        {
+            <div class="ship-card">
+                <div class="ship-card-header">
+                    <span class="ship-name">@ship.ShipName.ToUpper()</span>
+                    <span class="ship-id muted">#@ship.ShipID</span>
+                </div>
+
+                <div class="ship-visual">
+                    @for (int i = 0; i < ship.Length; i++)
+                    {
+                        <div class="ship-cell @(i == 0 ? "cell-bow" : i == ship.Length - 1 ? "cell-stern" : "cell-mid")"></div>
+                    }
+                </div>
+
+                <div class="ship-stats">
+                    <div class="stat">
+                        <span class="stat-label">LENGTH</span>
+                        <span class="stat-value">@ship.Length</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">WIDTH</span>
+                        <span class="stat-value">@ship.Width</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">MAX / PLAYER</span>
+                        <span class="stat-value">@ship.MaxPerPlayer</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">GRID CELLS</span>
+                        <span class="stat-value">@(ship.Length * ship.Width)</span>
+                    </div>
+                </div>
+
+                <div class="ship-grid-preview">
+                    <span class="muted">GRID FOOTPRINT</span>
+                    <div class="mini-grid">
+                        @for (int r = 0; r < ship.Width; r++)
+                        {
+                            <div class="mini-row">
+                                @for (int c = 0; c < ship.Length; c++)
+                                {
+                                    <div class="mini-cell filled"></div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    List<ShipTypeListResponseDto>? ships;
+    bool loading = true;
+    string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ships = await Api.GetShipTypesAsync();
+        if (ships == null)
+            errorMessage = "Failed to load fleet data. Is the API running?";
+        loading = false;
+    }
+}

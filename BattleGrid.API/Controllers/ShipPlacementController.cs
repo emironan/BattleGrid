@@ -34,11 +34,11 @@ namespace BattleGrid.API.Controllers
             try
             {
                 // Check if the player sending the request is actually a player in that match
-                var IsPlayer = await _matchServices.ValidatePlayerAsync(dto.MatchID, dto.PlayerID);
+                var isPlayer = await _matchServices.ValidatePlayerAsync(dto.MatchID, dto.PlayerID);
                 
-                if(!IsPlayer.Success)
+                if(!isPlayer.Success)
                 {
-                    throw new UnauthorizedAccessException("Requesting user is not a player in this match!");
+                    return Unauthorized($"You can not place this ship: {isPlayer.Message}");
                 }
 
                 var result = await _shipPlacementServices.PlaceShipAsync(dto);

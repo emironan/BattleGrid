@@ -1,0 +1,13 @@
+﻿@inherits LayoutComponentBase
+
+<div class="app-shell">
+    <NavMenu />
+    <main class="main-content">
+        <div class="container">
+            @Body
+        </div>
+    </main>
+    <footer class="app-footer">
+        <span class="muted">BATTLEGRID SYSTEM — SECURE CHANNEL — @DateTime.UtcNow.Year</span>
+    </footer>
+</div>

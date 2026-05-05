@@ -13,6 +13,7 @@
     <File Path=".gitattributes" />
     <File Path=".gitignore" />
     <File Path="LICENSE.txt" />
+    <File Path="start.sh" />
   </Folder>
   <Folder Name="/src/">
     <File Path=".dockerignore" />
@@ -23,6 +24,7 @@
     <Project Path="BattleGrid.Contracts/BattleGrid.Contracts.csproj" Id="445b58bd-05ce-4db2-ab29-1bbda35aafe3" />
     <Project Path="BattleGrid.Domain/BattleGrid.Domain.csproj" Id="78c908d1-5da8-4b56-b623-13ea053a6a5a" />
     <Project Path="BattleGrid.Infrastructure/BattleGrid.Infrastructure.csproj" Id="c52152aa-e2d5-436f-af15-255ab4b51d3a" />
+    <Project Path="BattleGrid.Web/BattleGrid.Web.csproj" Id="1455ec1d-e29e-4cf0-aaad-af4ad9f20d6f" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="BattleGrid.Tests/BattleGrid.Tests.csproj" Id="cc7a72f0-436e-4ad8-b4a1-58ab6bf6e12c" />

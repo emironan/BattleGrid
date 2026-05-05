@@ -1,0 +1,174 @@
+@page "/dashboard"
+@implements IDisposable
+@inject AuthStateService Auth
+@inject NavigationManager Nav
+
+<PageTitle>Dashboard — BattleGrid</PageTitle>
+
+@if (!Auth.IsInitialized)
+{
+    <div class="loading-screen">
+        <p class="muted">Restoring session...</p>
+    </div>
+}
+else if (!Auth.IsLoggedIn)
+{
+    <div class="loading-screen">
+        <p class="muted">Redirecting to login...</p>
+    </div>
+}
+else
+{
+    <div class="page-header">
+        <h1><span class="accent">◈</span> COMMAND DASHBOARD</h1>
+        <p class="muted">Operator session active</p>
+    </div>
+
+    <div class="cards-grid">
+        <div class="card card-accent">
+            <div class="card-header">
+                <span class="card-icon">👤</span>
+                <span class="card-label">OPERATOR PROFILE</span>
+            </div>
+            <div class="card-body">
+                <table class="info-table">
+                    <tr>
+                        <td class="info-key">USER ID</td>
+                        <td class="info-val">#@Auth.CurrentUser!.UserID</td>
+                    </tr>
+                    <tr>
+                        <td class="info-key">USERNAME</td>
+                        <td class="info-val">@(Auth.CurrentUser.UserName ?? "—")</td>
+                    </tr>
+                    <tr>
+                        <td class="info-key">EMAIL</td>
+                        <td class="info-val">@Auth.CurrentUser.Email</td>
+                    </tr>
+                    <tr>
+                        <td class="info-key">ROLE</td>
+                        <td class="info-val">
+                            @if (Auth.CurrentUser.IsAdmin)
+                            {
+                                <span class="badge badge-admin">ADMIN</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-player">PLAYER</span>
+                            }
+                        </td>
+                    </tr>
+                    <tr>
+                        <td class="info-key">STATUS</td>
+                        <td class="info-val">
+                            @if (Auth.CurrentUser.IsBanned)
+                            {
+                                <span class="badge badge-danger">BANNED</span>
+                            }
+                            else
+                            {
+                                <span class="badge badge-success">ACTIVE</span>
+                            }
+                        </td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-icon">🔑</span>
+                <span class="card-label">SESSION TOKENS</span>
+            </div>
+            <div class="card-body">
+                <table class="info-table">
+                    <tr>
+                        <td class="info-key">ACCESS TOKEN</td>
+                        <td class="info-val token-preview">@TruncateToken(Auth.AccessToken)</td>
+                    </tr>
+                    <tr>
+                        <td class="info-key">AT EXPIRES</td>
+                        <td class="info-val">@FormatExpiry(Auth.AccessTokenExpiry)</td>
+                    </tr>
+                    <tr>
+                        <td class="info-key">REFRESH TOKEN</td>
+                        <td class="info-val token-preview">@TruncateToken(Auth.RefreshToken)</td>
+                    </tr>
+                    <tr>
+                        <td class="info-key">RT EXPIRES</td>
+                        <td class="info-val">@FormatExpiry(Auth.RefreshTokenExpiry)</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-header">
+                <span class="card-icon">⚓</span>
+                <span class="card-label">QUICK ACTIONS</span>
+            </div>
+            <div class="card-body quick-actions">
+                <a href="/users" class="btn btn-outline btn-full">VIEW ALL OPERATORS</a>
+                <a href="/shiptypes" class="btn btn-outline btn-full">VIEW FLEET REGISTRY</a>
+                <a href="http://localhost:4744/swagger" target="_blank" class="btn btn-outline btn-full">OPEN API DOCS ↗</a>
+                <button class="btn btn-danger btn-full" @onclick="Logout">LOGOUT</button>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    protected override void OnInitialized()
+    {
+        Auth.OnChange += OnAuthChanged;
+        if (Auth.IsInitialized && !Auth.IsLoggedIn)
+            Nav.NavigateTo("/login");
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (Auth.IsInitialized && !Auth.IsLoggedIn)
+            Nav.NavigateTo("/login");
+    }
+
+    private async void OnAuthChanged()
+    {
+        await InvokeAsync(() =>
+        {
+            if (Auth.IsInitialized && !Auth.IsLoggedIn)
+            {
+                Nav.NavigateTo("/login");
+                return Task.CompletedTask;
+            }
+
+            StateHasChanged();
+            return Task.CompletedTask;
+        });
+    }
+
+    async Task Logout()
+    {
+        await Auth.LogoutAsync();
+        Nav.NavigateTo("/");
+    }
+
+    string TruncateToken(string? token)
+    {
+        if (string.IsNullOrEmpty(token)) return "—";
+        return token.Length > 24 ? token[..24] + "..." : token;
+    }
+
+    string FormatExpiry(DateTimeOffset? expiry)
+    {
+        if (expiry == null) return "—";
+        var remaining = expiry.Value - DateTimeOffset.UtcNow;
+        if (remaining <= TimeSpan.Zero) return "EXPIRED";
+        if (remaining.TotalDays >= 1)
+            return $"{expiry.Value:yyyy-MM-dd HH:mm} UTC ({(int)remaining.TotalDays}d remaining)";
+        return $"{expiry.Value:HH:mm:ss} UTC ({(int)remaining.TotalMinutes}m remaining)";
+    }
+
+    public void Dispose()
+    {
+        Auth.OnChange -= OnAuthChanged;
+    }
+}

@@ -33,7 +33,6 @@ namespace BattleGrid.API.Controllers
                 var result = await _authServices.RegisterAsync(dto);
                 if (!result.Success)
                 {
-                    //_logger.LogError("Registration failed - email already exists: {Email}", dto.Email);
                     return BadRequest($"An error occured while registering the user: {result.Message}");
                 }
 
@@ -50,45 +49,47 @@ namespace BattleGrid.API.Controllers
         {
             try
             {
-                var tokenResponse = await _authServices.LoginAsync(dto);
+                var loginResponse = await _authServices.LoginAsync(dto);
 
-                if (tokenResponse == null)
+                // Just in case
+                if (loginResponse == null)
                 {
                     return Unauthorized("Incorrect username/email or password.");
                 }
 
+                // If login failed, return the error message
+                if (!loginResponse.Success)
+                {
+                    return Unauthorized(loginResponse.Message);
+                }
+
+                // Continue with successful login
+                // Set the cookies for access and refresh tokens
                 Response.Cookies.Append(
                     "AccessToken",
-                    tokenResponse.AccessToken,
+                    loginResponse.AccessToken,
                     new CookieOptions
                     {
                         HttpOnly = true,
-                        Expires = tokenResponse.ATExpiresAt,
-                        Secure = true,
-                        SameSite = SameSiteMode.Strict,
+                        Expires = loginResponse.ATExpiresAt,
+                        Secure = Request.IsHttps,
+                        SameSite = SameSiteMode.Lax,
                         Path = "/"
                     });
 
                 Response.Cookies.Append(
                     "RefreshToken",
-                    tokenResponse.RefreshToken,
+                    loginResponse.RefreshToken,
                     new CookieOptions
                     {
                         HttpOnly = true,
-                        Expires = tokenResponse.RTExpiresAt,
-                        Secure = true,
-                        SameSite = SameSiteMode.Strict,
+                        Expires = loginResponse.RTExpiresAt,
+                        Secure = Request.IsHttps,
+                        SameSite = SameSiteMode.Lax,
                         Path = "/"
                     });
 
-                return Ok(new
-                {
-                    message = "Login Successful.",
-                    accessToken = tokenResponse.AccessToken,
-                    accessTokenExpiration = tokenResponse.ATExpiresAt,
-                    refreshToken = tokenResponse.RefreshToken,
-                    refreshTokenExpiration = tokenResponse.RTExpiresAt
-                });
+                return Ok(loginResponse);
             }
             catch
             {
