@@ -24,10 +24,10 @@
 
 	Back to the IDE. If you view via solution explorer,
 		You will see there are currently 2 parts: src and tests.
-	The src contains 2 different projects, 
-		the server backend and a console app for testing the game logic.
+	The src contains 3 different projects, 
+		the server backend, a console app for testing the game logic, and a blazor server frontend.
 
-	----------------------------------------------------------------------------------------
+	---------------------------------------------------------------------------------------------------
 	
 		- Server backend. This is the main part of the project.
 		  It will handle all the game logic and communication with clients.
@@ -61,7 +61,7 @@
 		  If you run it via a `dotnet run` command, only http works. 
 			Open your browser and go to http://localhost:4744/swagger
 
-	----------------------------------------------------------------------------------------
+	---------------------------------------------------------------------------------------------------
 
 		- Console app. It is used to test the game logic. 2 ships per player is pre-placed.
 		  Then, starting with Player 1, players will take turns to enter coordinates 
@@ -75,8 +75,21 @@
 			dotnet run				/* This will launch a new terminal window
 									 *	where you can play the game.
 									 */
+									 
+	---------------------------------------------------------------------------------------------------
 
-	----------------------------------------------------------------------------------------
+		- Blazor Server (BattleGrid.Web) is a blazor web app with interactive render mode set to server.
+		  For now, it includes register, login, and some retrieve and display data functionality.
+
+		  Open a new terminal
+
+		  cd BattleGrid.Web
+		  dotnet run
+
+		  Then go to http://localhost:4745 and the home page will greet your. 
+		  Try and test it!
+		  
+	---------------------------------------------------------------------------------------------------
 		
 		- Tests. Unit tests for the backend. It is built using xUnit.
 		  Currently, it only includes tests for game logic. Such as,
