@@ -1,6 +1,7 @@
 ﻿@implements IDisposable
 @inject AuthStateService Auth
 @inject NavigationManager Nav
+@inject ActiveMatchSession MatchSession
 
 <nav class="navbar">
     <a href="/" class="navbar-brand">
@@ -9,16 +10,27 @@
     </a>
 
     <div class="navbar-links">
-        @if (!Auth.IsLoggedIn)
+        @if (MatchSession.IsLocked)
+        {
+            <span class="nav-link nav-locked">MATCH IN PROGRESS</span>
+        }
+        else if (!Auth.IsLoggedIn)
         {
             <NavLink href="/" class="nav-link" Match="NavLinkMatch.All">HOME</NavLink>
         }
-        <NavLink href="/shiptypes" class="nav-link">FLEET</NavLink>
-        <NavLink href="/users" class="nav-link">PERSONNEL</NavLink>
+        @if (!MatchSession.IsLocked)
+        {
+            <NavLink href="/shiptypes" class="nav-link">FLEET</NavLink>
+            <NavLink href="/users" class="nav-link">PERSONNEL</NavLink>
+        }
 
         @if (Auth.IsLoggedIn)
         {
-            <NavLink href="/dashboard" class="nav-link">DASHBOARD</NavLink>
+            @if (!MatchSession.IsLocked)
+            {
+                <NavLink href="/dashboard" class="nav-link">DASHBOARD</NavLink>
+                <NavLink href="/queue" class="nav-link">FIND MATCH</NavLink>
+            }
             <span class="nav-user">
                 <span class="status-dot online"></span>
                 @(Auth.CurrentUser?.UserName ?? Auth.CurrentUser?.Email)
@@ -29,7 +41,7 @@
             </span>
             <button class="btn btn-sm btn-danger" @onclick="Logout">LOGOUT</button>
         }
-        else
+        else if (!MatchSession.IsLocked)
         {
             <NavLink href="/login" class="nav-link">LOGIN</NavLink>
             <NavLink href="/register" class="btn btn-sm btn-primary nav-btn">REGISTER</NavLink>
@@ -41,10 +53,19 @@
     protected override void OnInitialized()
     {
         Auth.OnChange += StateHasChanged;
+        MatchSession.OnChange += OnMatchSessionChanged;
     }
+
+    void OnMatchSessionChanged() => _ = InvokeAsync(StateHasChanged);
 
     async Task Logout()
     {
+        if (MatchSession.IsLocked)
+        {
+            // Avoid orphaning an active match from the nav bar; use in-game Leave.
+            return;
+        }
+
         await Auth.LogoutAsync();
         Nav.NavigateTo("/");
     }
@@ -52,5 +73,6 @@
     public void Dispose()
     {
         Auth.OnChange -= StateHasChanged;
+        MatchSession.OnChange -= OnMatchSessionChanged;
     }
 }

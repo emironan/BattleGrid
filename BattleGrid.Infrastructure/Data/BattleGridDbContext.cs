@@ -37,6 +37,8 @@ public sealed class BattleGridDbContext : DbContext
         {
             entity.HasKey(x => x.StatID);
 
+            entity.Property(x => x.WinRate).ValueGeneratedOnAddOrUpdate();
+
             entity.HasIndex(x => x.MatchesPlayed);
             entity.HasIndex(x => x.MatchesWon);
             entity.HasIndex(x => x.WinRate);

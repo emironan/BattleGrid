@@ -46,16 +46,20 @@
 	[✓] 5.2 - Login and Register pages
 	[+] 5.3 - Dashboard page after login
 	[]	5.4 - Admin panel page
-	[]	5.5 - A queue button/page
-	[]	5.6 - Game page for the actual gameplay
+	[+]	5.5 - A queue button/page
+		[]  5.5.1 - Users should be able to move freely between pages while they are in queue. 
+		[]  5.5.2 - 'Find a match' button should turn into 'Cancel matchmaking' while already in queue.
+	[✓]	5.6 - Game page for the actual gameplay
 	[]	5.7 - Leaderboard page
 	[]	5.8 - Match History page
 	[]  5.9 - Match replay capability
+	[]  5.10 - Clean-up the UI. Remove debug texts, remove testing pages like /users etc.
 
-[] 6 - Implement SignalR
-	[] 6.1 - Queue Hub. A single hub for all the players
-	[] 6.2 - Matchmaking Logic based on Ranking and time elapsed in queue for a player
-	[] 6.3 - Game Hub. A new instance for every matched player duo.
-	[] 6.4 - Keep ship placements in memory until both players are done, then save it all to DB at once
-	[] 6.5 - Keep player moves (shots) in memory until the game is over, then save it all to DB at once
-	[] 6.6 - Ranking change logic after a game is over
+[+] 6 - Implement SignalR
+	[✓] 6.1 - Queue Hub. A single hub for all the players
+	[✓] 6.2 - Matchmaking Logic based on Ranking and time elapsed in queue for a player
+	[✓] 6.3 - Game Hub. A new instance for every matched player duo.
+	[✓] 6.4 - Keep ship placements in memory until both players are done, then save it all to DB at once
+	[✓] 6.5 - Keep player moves (shots) in memory until the game is over, then save it all to DB at once
+	[+] 6.6 - Ranking change logic after a game is over. Currently a fixed ±15 points is applied after a match.
+	Make it so it is dynmaically calcualted based on rating difference

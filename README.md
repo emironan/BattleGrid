@@ -1,5 +1,7 @@
 # BattleGrid
 
+	We are almost there! Now, you can actually play the game (with a UI)!
+	
 	To run the project, you will need .NET 10 SDK and PostgreSQL(v18+) 
 		installed on your machine.
 		
@@ -79,15 +81,34 @@
 	---------------------------------------------------------------------------------------------------
 
 		- Blazor Server (BattleGrid.Web) is a blazor web app with interactive render mode set to server.
-		  For now, it includes register, login, and some retrieve and display data functionality.
+		  ***NEW*** Now, you can:
+			- Register, login
+			- Join the queue to find a match! You will be matched with a suitable opponent 
+			   based on your rating and the time elapsed since you joined the queue.
+			- After you are matched with an opponent, you will be redirected to the game page
+			   where you can finally, actually play the game!
+
 
 		  Open a new terminal
 
 		  cd BattleGrid.Web
 		  dotnet run
 
-		  Then go to http://localhost:4745 and the home page will greet your. 
-		  Try and test it!
+		  Then go to http://localhost:4745 and the home page will greet you. 
+		  Try and test it.
+
+		  Test what happens if you:
+			- wait in queue for too long.
+			- do not place all of your ships in ship placement phase.
+			- click on 'Save placement' without placing any ships
+				or after placing only some of your ships.
+			- never fire a shot.
+			- fire a shot on an already targeted area.
+			- play the game the way it was supposed to be.
+			- play the game the way it was not supposed to be.
+
+		  Test everything you can think of!
+
 		  
 	---------------------------------------------------------------------------------------------------
 		

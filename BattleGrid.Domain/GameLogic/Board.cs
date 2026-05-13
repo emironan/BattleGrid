@@ -4,9 +4,9 @@ namespace BattleGrid.Domain.GameLogic;
 
 public class Board
 {
-    private const int Size = 10;
+    public const int GridSize = 10;
 
-    private readonly CellState[,] _grid = new CellState[Size, Size];
+    private readonly CellState[,] _grid = new CellState[GridSize, GridSize];
     private readonly Dictionary<int, int> _shipHealth = new();
     private readonly Dictionary<(int x, int y), int> _shipMap = new();
 
@@ -78,6 +78,9 @@ public class Board
     // Function to check if all ships of a player are sunk
     public bool AreAllShipsSunk()
     {
+        if (_shipHealth.Count == 0)
+            return false;
+
         var result = _shipHealth.Values.All(health => health <= 0);
         Console.WriteLine($"AreAllShipsSunk: {result}");
         return result;
@@ -96,5 +99,49 @@ public class Board
     public CellState CellStateAt(Coordinate coord)
     {
         return _grid[coord.X, coord.Y];
+    }
+
+    /// <summary> Untargeted open water only (guaranteed miss if fired).
+    /// This will be used to randomly select an empty coordinate to fire at
+    ///  in case the player does not shoot in time.
+    /// Player is AFK or griefing. </summary>
+    public bool TryGetRandomUntargetedOpenWater(Random rnd, out Coordinate coord)
+    {
+        coord = default;
+        var pool = new List<Coordinate>(64);
+        for (var x = 0; x < GridSize; x++)
+        {
+            for (var y = 0; y < GridSize; y++)
+            {
+                if (_grid[x, y] == CellState.Empty)
+                    pool.Add(new Coordinate(x, y));
+            }
+        }
+
+        if (pool.Count == 0)
+            return false;
+
+        coord = pool[rnd.Next(pool.Count)];
+        return true;
+    }
+
+    /// <summary> Cells occupied by ships (including hit/sunk) for UI sync. </summary>
+    public List<(int X, int Y, int InternalShipId)> GetShipCellsForDisplay()
+    {
+        var list = new List<(int, int, int)>();
+        for (var x = 0; x < GridSize; x++)
+        {
+            for (var y = 0; y < GridSize; y++)
+            {
+                var st = _grid[x, y];
+                if ((st is CellState.Ship or CellState.Hit or CellState.Sunk) &&
+                    _shipMap.TryGetValue((x, y), out var sid))
+                {
+                    list.Add((x, y, sid));
+                }
+            }
+        }
+
+        return list;
     }
 }

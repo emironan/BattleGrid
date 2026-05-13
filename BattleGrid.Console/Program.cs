@@ -5,7 +5,7 @@ using System.Text.Json;
 using BattleGrid.Domain.Enums;
 using BattleGrid.Domain.GameLogic;
 
-var game = new GameState(1, 2);
+var game = new GameState(1, 2, 2);
 
 var ship1 = ShipPlacementHelper.Generate(new Coordinate(0, 0), 2, false);
 var ship2 = ShipPlacementHelper.Generate(new Coordinate(5, 5), 2, false);

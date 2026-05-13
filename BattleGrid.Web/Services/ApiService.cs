@@ -1,5 +1,6 @@
 ﻿using BattleGrid.Contracts.RequestDtos;
 using BattleGrid.Contracts.ResponseDtos;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 
@@ -84,6 +85,19 @@ public class ApiService
         }
     }
 
+    public async Task<bool> CheckApiHealthAsync()
+    {
+        try
+        {
+            var resp = await _http.GetAsync("/");
+            return resp.IsSuccessStatusCode;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     public async Task<List<ShipTypeListResponseDto>?> GetShipTypesAsync()
     {
         try
@@ -96,16 +110,20 @@ public class ApiService
         }
     }
 
-    public async Task<bool> CheckApiHealthAsync()
+    public async Task<ResumableMatchResponseDto?> GetResumableMatchAsync()
     {
+        ApplyAuth();
         try
         {
-            var response = await _http.GetAsync("/");
-            return response.IsSuccessStatusCode;
+            var resp = await _http.GetAsync("/api/Match/resumable");
+            if (resp.StatusCode == HttpStatusCode.NoContent)
+                return null;
+            resp.EnsureSuccessStatusCode();
+            return await resp.Content.ReadFromJsonAsync<ResumableMatchResponseDto>();
         }
         catch
         {
-            return false;
+            return null;
         }
     }
 }

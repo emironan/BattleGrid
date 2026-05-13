@@ -7,6 +7,8 @@ public class GameState
     public int Player1Id { get; }
     public int Player2Id { get; }
 
+    public int ShipsRequiredPerPlayer => _shipsRequiredPerPlayer;
+
     public GamePhase Phase { get; private set; }
 
     public int CurrentTurnPlayerId { get; private set; }
@@ -16,15 +18,20 @@ public class GameState
     private readonly Board _player1Board = new();
     private readonly Board _player2Board = new();
 
-    private const int MaxShipsPerPlayer = 2; // Define the maximum number of ships per player
+    private readonly int _shipsRequiredPerPlayer;
     private int _p1PlacedShipCount = 0;
     private int _p2PlacedShipCount = 0;
 
     private bool _p1ShipsPlaced = false;
     private bool _p2ShipsPlaced = false;
 
-    public GameState(int player1Id, int player2Id)
+    public GameState(int player1Id, int player2Id, int shipsRequiredPerPlayer)
     {
+        if (shipsRequiredPerPlayer < 1)
+            throw new ArgumentOutOfRangeException(nameof(shipsRequiredPerPlayer));
+
+        _shipsRequiredPerPlayer = shipsRequiredPerPlayer;
+
         Phase = GamePhase.WaitingForPlayers;
         Console.WriteLine("Waiting for players to join...");
 
@@ -48,7 +55,7 @@ public class GameState
         if (playerId == Player1Id)
         {
             _p1PlacedShipCount++;
-            if (_p1PlacedShipCount >= MaxShipsPerPlayer)
+            if (_p1PlacedShipCount >= _shipsRequiredPerPlayer)
             {
                 _p1ShipsPlaced = true;
             }
@@ -56,7 +63,7 @@ public class GameState
         else if (playerId == Player2Id)
         {
             _p2PlacedShipCount++;
-            if (_p2PlacedShipCount >= MaxShipsPerPlayer)
+            if (_p2PlacedShipCount >= _shipsRequiredPerPlayer)
             {
                 _p2ShipsPlaced = true;
             }
@@ -137,5 +144,21 @@ public class GameState
         }
 
         return result;
+    }
+
+    /// <summary> Open water on the opponent's board (current turn holder shoots there → miss). </summary>
+    public bool TryPickForcedMissOpenWater(Random rnd, out Coordinate coord)
+    {
+        coord = default;
+        if (Phase != GamePhase.InProgress)
+            return false;
+
+        var opponentBoard = CurrentTurnPlayerId == Player1Id ? _player2Board : _player1Board;
+        return opponentBoard.TryGetRandomUntargetedOpenWater(rnd, out coord);
+    }
+
+    public IReadOnlyList<(int X, int Y, int InternalShipId)> GetOwnFleetCells(int playerId)
+    {
+        return GetBoard(playerId).GetShipCellsForDisplay();
     }
 }

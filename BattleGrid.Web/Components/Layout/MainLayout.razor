@@ -1,4 +1,7 @@
 ﻿@inherits LayoutComponentBase
+@implements IDisposable
+@inject NavigationManager Nav
+@inject ActiveMatchSession MatchSession
 
 <div class="app-shell">
     <NavMenu />
@@ -11,3 +14,28 @@
         <span class="muted">BATTLEGRID SYSTEM — SECURE CHANNEL — @DateTime.UtcNow.Year</span>
     </footer>
 </div>
+
+@code {
+    protected override void OnInitialized()
+    {
+        Nav.LocationChanged += OnLocationChanged;
+    }
+
+    void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        if (!MatchSession.IsLocked)
+            return;
+        var mid = MatchSession.MatchId!.Value;
+        var path = new Uri(Nav.Uri).AbsolutePath.TrimEnd('/');
+        var allowed = $"/game/{mid}";
+        if (string.Equals(path, allowed, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        _ = InvokeAsync(() => Nav.NavigateTo(allowed, replace: true));
+    }
+
+    public void Dispose()
+    {
+        Nav.LocationChanged -= OnLocationChanged;
+    }
+}

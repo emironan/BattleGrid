@@ -10,7 +10,7 @@ public class GameStateTests
     [Fact]
     public void GamePhase_At_Start_Should_Be_In_ShipPlacement_Phase()
     {
-        var game = new GameState(1, 2);
+        var game = new GameState(1, 2, 2);
 
         Assert.Equal(GamePhase.ShipPlacement, game.Phase);      // After both players have joined, the game should transition to ShipPlacement phase
     }
@@ -23,7 +23,7 @@ public class GameStateTests
     [Fact]
     public void Game_Should_Start_When_Both_Players_Place_All_Ships()
     {
-        var game = new GameState(1, 2);
+        var game = new GameState(1, 2, 2);
 
         var ship1 = ShipPlacementHelper.Generate(new Coordinate(0, 0), 1, false);
         var ship2 = ShipPlacementHelper.Generate(new Coordinate(1, 0), 1, false);
@@ -39,7 +39,7 @@ public class GameStateTests
     [Fact]
     public void GameState_Should_Start_With_Player1_Turn()
     {
-        var game = new GameState(1, 2);
+        var game = new GameState(1, 2, 2);
 
         // First place ships for both players to transition to InProgress phase
         var ship1 = ShipPlacementHelper.Generate(new Coordinate(0, 0), 1, false);
@@ -56,7 +56,7 @@ public class GameStateTests
     [Fact]
     public void Game_Should_Switch_Turns_On_Miss()
     {
-        var game = new GameState(1, 2);
+        var game = new GameState(1, 2, 2);
 
         // First place all ships for both players to transition to InProgress phase
         var ship1 = ShipPlacementHelper.Generate(new Coordinate(0, 0), 1, false);
@@ -77,7 +77,7 @@ public class GameStateTests
     [Fact]
     public void GameState_Should_Alternate_Turns_On_Miss()
     {
-        var game = new GameState(1, 2);
+        var game = new GameState(1, 2, 2);
 
         // First place ships for both players to transition to InProgress phase
         var ship1 = ShipPlacementHelper.Generate(new Coordinate(0, 0), 1, false);
@@ -97,7 +97,7 @@ public class GameStateTests
     [Fact]
     public void Game_Should_Not_Switch_Turn_After_Hit()
     {
-        var game = new GameState(1, 2);
+        var game = new GameState(1, 2, 2);
 
         // First place ships for both players to transition to InProgress phase
         var ship1 = ShipPlacementHelper.Generate(new Coordinate(0, 0), 1, false);
@@ -116,7 +116,7 @@ public class GameStateTests
     [Fact]
     public void GameState_Should_Throw_When_Wrong_Player_Shoots()
     {
-        var game = new GameState(1, 2);
+        var game = new GameState(1, 2, 2);
 
         // First place ships for both players to transition to InProgress phase
         var ship1 = ShipPlacementHelper.Generate(new Coordinate(0, 0), 1, false);
@@ -135,7 +135,7 @@ public class GameStateTests
     [Fact]
     public void GameState_Should_Not_Switch_Turn_On_Win()
     {
-        var game = new GameState(1, 2);
+        var game = new GameState(1, 2, 2);
 
         // First place ships for both players to transition to InProgress phase
         var ship1 = ShipPlacementHelper.Generate(new Coordinate(0, 0), 1, false);
@@ -155,7 +155,7 @@ public class GameStateTests
     [Fact]
     public void Game_Should_End_When_A_Player_Wins()
     {
-        var game = new GameState(1, 2);
+        var game = new GameState(1, 2, 2);
 
         // First place ships for both players to transition to InProgress phase
         var ship1 = ShipPlacementHelper.Generate(new Coordinate(0, 0), 1, false);

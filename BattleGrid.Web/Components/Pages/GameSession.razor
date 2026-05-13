@@ -1,0 +1,1201 @@
+@page "/game/{MatchId:int}"
+@implements IAsyncDisposable
+@inject AuthStateService Auth
+@inject NavigationManager Nav
+@inject IConfiguration Config
+@inject ApiService Api
+@inject IJSRuntime JS
+@inject ActiveMatchSession MatchSession
+@using Microsoft.AspNetCore.SignalR.Client
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@using System.Text.Json
+@using BattleGrid.Contracts.ResponseDtos
+@using BattleGrid.Contracts.RequestDtos
+
+<PageTitle>Match @MatchId — BattleGrid</PageTitle>
+
+@if (!Auth.IsInitialized)
+{
+    <div class="loading-screen"><p class="muted">Restoring session...</p></div>
+}
+else if (!Auth.IsLoggedIn || string.IsNullOrEmpty(Auth.AccessToken))
+{
+    <div class="loading-screen"><p class="muted">Redirecting to login...</p></div>
+}
+else
+{
+    <div class="page-header">
+        <h1><span class="accent">◈</span> MATCH <span class="accent">#@MatchId</span></h1>
+        <p class="muted">@PhaseSubtitle</p>
+    </div>
+
+    @if (!_inBattle)
+    {
+        <div class="placement-meta muted">
+            @if (_placementDeadlineUtc is { } d)
+            {
+                <span>Time remaining: <strong>@Math.Max(0, (int)Math.Ceiling((d - DateTimeOffset.UtcNow).TotalSeconds))</strong>s</span>
+            }
+            <button type="button" class="btn btn-sm btn-primary" style="margin-left:12px" disabled="@(_hub?.State != HubConnectionState.Connected)" @onclick="SavePlacementsAsync">Save placements</button>
+        </div>
+
+        <div class="game-session-layout">
+            <div class="card game-board-card">
+                <div class="card-header">
+                    <span class="card-icon">▣</span>
+                    <span class="card-label">YOUR GRID</span>
+                </div>
+                <div class="card-body">
+                    <div class="placement-toolbar">
+                        <span class="muted">Selected: <strong>@(SelectedShip?.ShipName ?? "—")</strong></span>
+                        <span class="muted">Orientation: <strong>@(PlacementVertical ? "Vertical" : "Horizontal")</strong></span>
+                        <button type="button" class="btn btn-sm btn-outline" @onclick="ToggleRotation">Rotate</button>
+                        <span class="muted">Wire: bottom-left (0,0); X = column (A→0); Y = row from bottom (row 1→0). R / right-click · Pick ship · Place</span>
+                    </div>
+                    @if (!string.IsNullOrEmpty(PlacementFeedback))
+                    {
+                        <p class="muted mt-sm">@PlacementFeedback</p>
+                    }
+                    <div class="game-board-title">Columns @GridCoordinates.ColumnIndexToLetter(0)–@GridCoordinates.ColumnIndexToLetter(Board.GridSize - 1) (X=0..@(Board.GridSize - 1)), rows @GridCoordinates.DisplayRowNumberFromY(0)–@GridCoordinates.DisplayRowNumberFromY(Board.GridSize - 1) (Y=0..@(Board.GridSize - 1), bottom row = 1)</div>
+                    <div class="battle-grid-frame battle-grid-frame--fit"
+                         tabindex="0"
+                         style="@(SelectedShip is not null ? "cursor: crosshair;" : null)"
+                         @onkeydown="OnGridKeyDown"
+                         @onpointerleave="OnPointerLeaveGrid"
+                         @oncontextmenu="OnGridContextMenu"
+                         @oncontextmenu:preventDefault="true">
+                        <div class="battle-grid">
+                            @for (int visualRow = 0; visualRow < Board.GridSize; visualRow++)
+                            {
+                                var cy = GridCoordinates.YFromVisualRowFromTop(visualRow);
+                                <div class="battle-row battle-row-cols">
+                                    <div class="battle-axis">@GridCoordinates.DisplayRowNumberFromY(cy)</div>
+                                    @for (int x = 0; x < Board.GridSize; x++)
+                                    {
+                                        var cx = x;
+                                        var label = $"{GridCoordinates.ColumnIndexToLetter(cx)}{GridCoordinates.DisplayRowNumberFromY(cy)}";
+                                        <div class="@GetPlacementCellClass(cx, cy)"
+                                             title="@label (internal x={cx}, y={cy})"
+                                             @onpointerenter="@(() => OnPointerEnterCell(cx, cy))"
+                                             @onclick="@(() => OnCellClick(cx, cy))">
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            <div class="battle-row battle-row-footer battle-row-cols">
+                                <div class="battle-corner"></div>
+                                @for (int x = 0; x < Board.GridSize; x++)
+                                {
+                                    <div class="battle-axis battle-axis--col">@GridCoordinates.ColumnIndexToLetter(x)</div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card game-dock-card">
+                <div class="card-header">
+                    <span class="card-icon">⚓</span>
+                    <span class="card-label">SHIPS TO PLACE</span>
+                </div>
+                <div class="card-body">
+                    @if (fleetLoading)
+                    {
+                        <p class="muted">Loading fleet manifest…</p>
+                    }
+                    else if (fleetError != null)
+                    {
+                        <div class="alert alert-danger"><span>✘</span> @fleetError</div>
+                    }
+                    else if (fleetManifest is null || fleetManifest.Count == 0)
+                    {
+                        <div class="alert alert-info">No ship types configured in the database.</div>
+                    }
+                    else
+                    {
+                        <div class="game-dock-summary">
+                            <strong>@TotalShipInstances</strong> ship(s) ·
+                            <strong>@TotalOccupiedCells</strong> cell(s) ·
+                            <strong>@PlacedShipCount</strong> / @TotalShipInstances placed
+                        </div>
+                        <div class="game-dock-list">
+                            @foreach (var ship in fleetManifest)
+                            {
+                                var exhausted = Remaining(ship) <= 0;
+                                var sel = SelectedShip?.ShipID == ship.ShipID;
+                                <div class="ship-dock-card @(sel ? "ship-dock-card--selected" : null) @(exhausted ? "ship-dock-card--exhausted" : null)"
+                                     @onclick="@(() => OnSelectShip(ship))">
+                                    <div class="ship-card-header">
+                                        <span class="ship-name">@ship.ShipName</span>
+                                        <span class="ship-id muted">#@ship.ShipID · @Remaining(ship)/@ship.MaxPerPlayer left</span>
+                                    </div>
+                                    <div class="ship-dock-meta">
+                                        <div class="stat">
+                                            <span class="stat-label">LENGTH</span>
+                                            <span class="stat-value">@ship.Length</span>
+                                        </div>
+                                        <div class="stat">
+                                            <span class="stat-label">WIDTH</span>
+                                            <span class="stat-value">@ship.Width</span>
+                                        </div>
+                                        <div class="stat">
+                                            <span class="stat-label">CELLS</span>
+                                            <span class="stat-value">@(ship.Length * ship.Width)</span>
+                                        </div>
+                                        <div class="stat">
+                                            <span class="stat-label">MAX</span>
+                                            <span class="stat-value">@ship.MaxPerPlayer</span>
+                                        </div>
+                                    </div>
+                                    <div class="ship-dock-visual">
+                                        @for (int i = 0; i < ship.Length; i++)
+                                        {
+                                            <div class="ship-cell @(i == 0 ? "cell-bow" : i == ship.Length - 1 ? "cell-stern" : "cell-mid")"></div>
+                                        }
+                                    </div>
+                                    <div class="ship-dock-footprint">
+                                        <span class="muted">FOOTPRINT (W×L)</span>
+                                        <div class="mini-grid">
+                                            @for (int r = 0; r < ship.Width; r++)
+                                            {
+                                                <div class="mini-row">
+                                                    @for (int c = 0; c < ship.Length; c++)
+                                                    {
+                                                        <div class="mini-cell filled"></div>
+                                                    }
+                                                </div>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="battle-hud muted">
+            Turn: <strong>@(_currentTurnPlayerId == Auth.CurrentUser?.UserID ? "YOUR SALVO" : "OPPONENT")</strong>
+            @if (_shotClockDeadlineUtc is { } sc)
+            {
+                <span class="muted"> · Shot clock: <strong>@Math.Max(0, (int)Math.Ceiling((sc - DateTimeOffset.UtcNow).TotalSeconds))</strong>s</span>
+            }
+            @if (!string.IsNullOrEmpty(ShotFeedback))
+            {
+                <span class="mt-sm"> · @ShotFeedback</span>
+            }
+        </div>
+
+        <div class="game-battle-boards">
+            <div class="card game-board-card">
+                <div class="card-header">
+                    <span class="card-icon">▣</span>
+                    <span class="card-label">YOUR FLEET</span>
+                </div>
+                <div class="card-body">
+                    <div class="game-board-title">Incoming fire on your ships</div>
+                    <div class="battle-grid-frame battle-grid-frame--fit @(_postMatchPhase ? "battle-grid-frame--frozen" : null)" tabindex="0">
+                        <div class="battle-grid">
+                            @for (int visualRow = 0; visualRow < Board.GridSize; visualRow++)
+                            {
+                                var cy = GridCoordinates.YFromVisualRowFromTop(visualRow);
+                                <div class="battle-row battle-row-cols">
+                                    <div class="battle-axis">@GridCoordinates.DisplayRowNumberFromY(cy)</div>
+                                    @for (int x = 0; x < Board.GridSize; x++)
+                                    {
+                                        var cx = x;
+                                        <div class="@GetOwnBattleCellClass(cx, cy)"
+                                             title="@($"Own {GridCoordinates.ColumnIndexToLetter(cx)}{GridCoordinates.DisplayRowNumberFromY(cy)}")"
+                                             @onclick="@(() => OnOwnBattleCellClick(cx, cy))">
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            <div class="battle-row battle-row-footer battle-row-cols">
+                                <div class="battle-corner"></div>
+                                @for (int x = 0; x < Board.GridSize; x++)
+                                {
+                                    <div class="battle-axis battle-axis--col">@GridCoordinates.ColumnIndexToLetter(x)</div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card game-board-card">
+                <div class="card-header">
+                    <span class="card-icon">◎</span>
+                    <span class="card-label">TARGET GRID (OPPONENT)</span>
+                </div>
+                <div class="card-body">
+                    <div class="game-board-title">Click to fire when it is your turn (bottom-left origin; X,Y sent to server)</div>
+                    <div class="battle-grid-frame battle-grid-frame--fit @(_postMatchPhase ? "battle-grid-frame--frozen" : null)" tabindex="0">
+                        <div class="battle-grid">
+                            @for (int visualRow = 0; visualRow < Board.GridSize; visualRow++)
+                            {
+                                var cy = GridCoordinates.YFromVisualRowFromTop(visualRow);
+                                <div class="battle-row battle-row-cols">
+                                    <div class="battle-axis">@GridCoordinates.DisplayRowNumberFromY(cy)</div>
+                                    @for (int x = 0; x < Board.GridSize; x++)
+                                    {
+                                        var cx = x;
+                                        <div class="@GetEnemyBattleCellClass(cx, cy)"
+                                             title="@($"Enemy {GridCoordinates.ColumnIndexToLetter(cx)}{GridCoordinates.DisplayRowNumberFromY(cy)}")"
+                                             @onclick="@(() => OnEnemyBattleCellClick(cx, cy))">
+                                        </div>
+                                    }
+                                </div>
+                            }
+                            <div class="battle-row battle-row-footer battle-row-cols">
+                                <div class="battle-corner"></div>
+                                @for (int x = 0; x < Board.GridSize; x++)
+                                {
+                                    <div class="battle-axis battle-axis--col">@GridCoordinates.ColumnIndexToLetter(x)</div>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @if (_postMatchPhase && _postMatchDeadlineUtc is { } pmd)
+        {
+            <div class="card post-match-card">
+                <div class="card-header">
+                    <span class="card-icon">⚑</span>
+                    <span class="card-label">MATCH RESULT</span>
+                </div>
+                <div class="card-body">
+                    @if (Auth.CurrentUser is { } me)
+                    {
+                        var won = _matchWinnerUserId == me.UserID;
+                        <p class="post-match-headline">@(won ? "Victory" : "Defeat")</p>
+                        <p class="muted">Winner: user #@_matchWinnerUserId</p>
+                        <p class="muted">Your rating change: <strong>@FormatSignedDelta(me.UserID == _player1Id ? _p1RatingDelta : _p2RatingDelta)</strong></p>
+                        <p class="muted">Return to dashboard in <strong>@Math.Max(0, (int)Math.Ceiling((pmd - DateTimeOffset.UtcNow).TotalSeconds))</strong>s or use the button.</p>
+                    }
+                    <button type="button" class="btn btn-primary btn-full mt-sm" @onclick="GoDashboardAsync">Go to dashboard</button>
+                </div>
+            </div>
+        }
+    }
+
+    <div class="card game-hub-bar">
+        <div class="card-body">
+            <p class="muted">Live channel: <strong>@status</strong> · Last event: <strong>@lastEvent</strong></p>
+            <button type="button" class="btn btn-danger btn-full mt-sm" disabled="@(_postMatchPhase || _hub?.State != HubConnectionState.Connected)" @onclick="ConfirmLeaveMatchAsync">Leave match (forfeit)</button>
+        </div>
+    </div>
+}
+
+@code {
+    static readonly JsonSerializerOptions HubJson = new() { PropertyNameCaseInsensitive = true };
+
+    [Parameter] public int MatchId { get; set; }
+
+    string status = "Connecting…";
+    string lastEvent = "—";
+    HubConnection? _hub;
+    bool _started;
+
+    bool _inBattle;
+    int _player1Id;
+    int _player2Id;
+    int _currentTurnPlayerId;
+    DateTimeOffset? _placementDeadlineUtc;
+    CancellationTokenSource? _placementUiCts;
+    CancellationTokenSource? _draftSyncCts;
+
+    bool _postMatchPhase;
+    int? _matchWinnerUserId;
+    int _p1RatingDelta;
+    int _p2RatingDelta;
+    DateTimeOffset? _postMatchDeadlineUtc;
+    CancellationTokenSource? _postMatchUiCts;
+
+    DateTimeOffset? _shotClockDeadlineUtc;
+    CancellationTokenSource? _shotUiCts;
+
+    List<ShipTypeListResponseDto>? fleetManifest;
+    bool fleetLoading = true;
+    string? fleetError;
+
+    ShipTypeListResponseDto? SelectedShip;
+    bool PlacementVertical;
+    (int x, int y)? HoverCell;
+    readonly Dictionary<int, int> _placedCount = new();
+    readonly Dictionary<(int x, int y), int> _occupyingShipId = new();
+    readonly List<PlacedShipDto> _placementOrder = new();
+    string? PlacementFeedback;
+    string? ShotFeedback;
+
+    readonly Dictionary<(int x, int y), string> _enemyIntel = new();
+    readonly Dictionary<(int x, int y), string> _incomingOnOwn = new();
+
+    string PhaseSubtitle => _inBattle
+        ? "Battle phase — fire on the enemy grid only on your turn."
+        : "Ship placement phase";
+
+    int TotalShipInstances => fleetManifest?.Sum(s => s.MaxPerPlayer) ?? 0;
+
+    int TotalOccupiedCells => fleetManifest?.Sum(s => s.Length * s.Width * s.MaxPerPlayer) ?? 0;
+
+    int PlacedShipCount => _placedCount.Values.Sum();
+
+    static string FormatSignedDelta(int d) => d > 0 ? $"+{d}" : d.ToString();
+
+    int Remaining(ShipTypeListResponseDto ship) =>
+        ship.MaxPerPlayer - _placedCount.GetValueOrDefault(ship.ShipID);
+
+    protected override void OnInitialized()
+    {
+        Auth.OnChange += OnAuthChanged;
+        if (Auth.IsInitialized && (!Auth.IsLoggedIn || string.IsNullOrEmpty(Auth.AccessToken)))
+            Nav.NavigateTo("/login");
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        var raw = await Api.GetShipTypesAsync();
+        if (raw is null)
+            fleetError = "Failed to load fleet data. Is the API running?";
+        else
+            fleetManifest = raw.OrderBy(s => s.ShipID).ToList();
+        fleetLoading = false;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _started) return;
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn || string.IsNullOrEmpty(Auth.AccessToken))
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        _started = true;
+        await StartHubAsync();
+        StateHasChanged();
+    }
+
+    void OnSelectShip(ShipTypeListResponseDto ship)
+    {
+        if (_inBattle || Remaining(ship) <= 0)
+            return;
+
+        if (SelectedShip?.ShipID == ship.ShipID)
+        {
+            SelectedShip = null;
+            HoverCell = null;
+        }
+        else
+            SelectedShip = ship;
+
+        PlacementFeedback = null;
+        StateHasChanged();
+    }
+
+    void ToggleRotation()
+    {
+        PlacementVertical = !PlacementVertical;
+        PlacementFeedback = null;
+        StateHasChanged();
+    }
+
+    void OnGridKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key is "r" or "R")
+            ToggleRotation();
+    }
+
+    void OnGridContextMenu()
+    {
+        ToggleRotation();
+    }
+
+    void OnPointerEnterCell(int x, int y)
+    {
+        if (_inBattle || SelectedShip is null)
+            return;
+
+        HoverCell = (x, y);
+        StateHasChanged();
+    }
+
+    void OnPointerLeaveGrid()
+    {
+        HoverCell = null;
+        StateHasChanged();
+    }
+
+    void OnCellClick(int x, int y)
+    {
+        if (_inBattle)
+            return;
+        TryPlace(x, y);
+    }
+
+    bool TryGetPreviewCells([System.Diagnostics.CodeAnalysis.NotNullWhen(true)] out List<Coordinate>? cells)
+    {
+        cells = null;
+        if (SelectedShip is null || HoverCell is null)
+            return false;
+
+        return ShipPlacementHelper.TryGenerateRectangle(
+            new Coordinate(HoverCell.Value.x, HoverCell.Value.y),
+            SelectedShip.Length,
+            SelectedShip.Width,
+            PlacementVertical,
+            out cells);
+    }
+
+    bool PreviewOverlaps(List<Coordinate> cells) =>
+        cells.Exists(c => _occupyingShipId.ContainsKey((c.X, c.Y)));
+
+    string GetPlacementCellClass(int x, int y)
+    {
+        if (_occupyingShipId.TryGetValue((x, y), out var sid))
+            return $"battle-cell battle-cell--placed ship-tone-{Math.Abs(sid) % 5}";
+
+        var isAnchor = SelectedShip is not null && HoverCell is { } h && h.x == x && h.y == y;
+        var hasPreview = TryGetPreviewCells(out var prev) && prev is not null;
+
+        if (SelectedShip is not null && isAnchor && !hasPreview)
+            return "battle-cell battle-cell--preview-bad battle-cell--selectable";
+
+        if (SelectedShip is not null && hasPreview && prev!.Exists(c => c.X == x && c.Y == y))
+        {
+            var valid = !PreviewOverlaps(prev);
+            return valid
+                ? "battle-cell battle-cell--preview-ok battle-cell--selectable"
+                : "battle-cell battle-cell--preview-bad battle-cell--selectable";
+        }
+
+        return SelectedShip is not null
+            ? "battle-cell battle-cell-water battle-cell--selectable"
+            : "battle-cell battle-cell-water";
+    }
+
+    void TryPlace(int x, int y)
+    {
+        HoverCell = (x, y);
+        PlacementFeedback = null;
+
+        if (SelectedShip is null)
+        {
+            PlacementFeedback = "Choose a ship from the list first.";
+            return;
+        }
+
+        if (Remaining(SelectedShip) <= 0)
+            return;
+
+        if (!ShipPlacementHelper.TryGenerateRectangle(
+                new Coordinate(x, y),
+                SelectedShip.Length,
+                SelectedShip.Width,
+                PlacementVertical,
+                out var cells) || cells is null)
+        {
+            PlacementFeedback = "That ship does not fit entirely on the grid from this cell.";
+            return;
+        }
+
+        if (PreviewOverlaps(cells))
+        {
+            PlacementFeedback = "Overlaps another ship.";
+            return;
+        }
+
+        foreach (var c in cells)
+            _occupyingShipId[(c.X, c.Y)] = SelectedShip.ShipID;
+
+        _placedCount[SelectedShip.ShipID] = _placedCount.GetValueOrDefault(SelectedShip.ShipID) + 1;
+        _placementOrder.Add(new PlacedShipDto
+        {
+            ShipID = SelectedShip.ShipID,
+            StartX = x,
+            StartY = y,
+            IsVertical = PlacementVertical
+        });
+        PlacementFeedback = $"{SelectedShip.ShipName} placed.";
+
+        if (Remaining(SelectedShip) <= 0)
+            SelectedShip = null;
+
+        HoverCell = (x, y);
+        StateHasChanged();
+        ScheduleDraftSync();
+    }
+
+    void ScheduleDraftSync()
+    {
+        if (_inBattle || _hub is null || _hub.State != HubConnectionState.Connected)
+            return;
+
+        try
+        {
+            _draftSyncCts?.Cancel();
+            _draftSyncCts?.Dispose();
+            _draftSyncCts = new CancellationTokenSource();
+            var ct = _draftSyncCts.Token;
+            var delayMs = PlacedShipCount >= TotalShipInstances ? 0 : 300;
+            _ = PushDraftDebouncedAsync(ct, delayMs);
+        }
+        catch
+        {
+            // ignore
+        }
+    }
+
+    async Task PushDraftDebouncedAsync(CancellationToken ct, int delayMs)
+    {
+        try
+        {
+            if (delayMs > 0)
+                await Task.Delay(delayMs, ct);
+
+            if (ct.IsCancellationRequested || _inBattle || _hub is null || _hub.State != HubConnectionState.Connected)
+                return;
+
+            await _hub.InvokeAsync("UpdatePlacementDraft", _placementOrder.ToList());
+        }
+        catch (OperationCanceledException)
+        {
+            // debounce superseded
+        }
+        catch
+        {
+            // hub / circuit not ready
+        }
+    }
+
+    async Task SavePlacementsAsync()
+    {
+        if (_hub is null || _hub.State != HubConnectionState.Connected)
+            return;
+
+        try
+        {
+            _draftSyncCts?.Cancel();
+            await _hub.InvokeAsync("UpdatePlacementDraft", _placementOrder.ToList());
+            await _hub.InvokeAsync("ReadyWithPlacements", _placementOrder.ToList());
+            PlacementFeedback = "Placements submitted — waiting for opponent or timer.";
+        }
+        catch (Exception ex)
+        {
+            PlacementFeedback = $"Could not submit: {ex.Message}";
+        }
+
+        StateHasChanged();
+    }
+
+    void OnOwnBattleCellClick(int x, int y)
+    {
+        if (_postMatchPhase)
+            return;
+
+        ShotFeedback = "You cannot fire at your own fleet. Use the enemy grid.";
+        StateHasChanged();
+    }
+
+    async Task OnEnemyBattleCellClick(int x, int y)
+    {
+        if (_postMatchPhase)
+            return;
+
+        if (_hub is null || _hub.State != HubConnectionState.Connected)
+            return;
+
+        if (Auth.CurrentUser?.UserID != _currentTurnPlayerId)
+        {
+            ShotFeedback = "Not your turn.";
+            StateHasChanged();
+            return;
+        }
+
+        try
+        {
+            await _hub.InvokeAsync("FireShot", x, y);
+        }
+        catch (Exception ex)
+        {
+            ShotFeedback = ex.Message;
+        }
+
+        StateHasChanged();
+    }
+
+    string GetOwnBattleCellClass(int x, int y)
+    {
+        if (_incomingOnOwn.TryGetValue((x, y), out var incoming))
+        {
+            return incoming switch
+            {
+                "Miss" => "battle-cell battle-cell--incoming-miss",
+                "Hit" or "Sunk" or "Win" => "battle-cell battle-cell--incoming-hit",
+                _ => "battle-cell battle-cell-water"
+            };
+        }
+
+        if (_occupyingShipId.TryGetValue((x, y), out var sid))
+            return $"battle-cell battle-cell--placed ship-tone-{Math.Abs(sid) % 5}";
+
+        return "battle-cell battle-cell-water";
+    }
+
+    string GetEnemyBattleCellClass(int x, int y)
+    {
+        if (_enemyIntel.TryGetValue((x, y), out var intel))
+        {
+            var sel = !_postMatchPhase ? " battle-cell--selectable" : "";
+            return intel switch
+            {
+                "Miss" => $"battle-cell battle-cell--intel-miss{sel}",
+                "Hit" => $"battle-cell battle-cell--intel-hit{sel}",
+                "Sunk" => $"battle-cell battle-cell--intel-sunk{sel}",
+                "Win" => $"battle-cell battle-cell--intel-sunk{sel}",
+                _ => $"battle-cell battle-cell-fog{sel}"
+            };
+        }
+
+        if (_postMatchPhase)
+            return "battle-cell battle-cell-fog";
+
+        var canAim = Auth.CurrentUser?.UserID == _currentTurnPlayerId;
+        return canAim
+            ? "battle-cell battle-cell-fog battle-cell--selectable"
+            : "battle-cell battle-cell-fog";
+    }
+
+    async Task StartHubAsync()
+    {
+        var api = Config["ApiBaseUrl"]?.TrimEnd('/') ?? "http://localhost:4744";
+        _hub = new HubConnectionBuilder()
+            .WithUrl($"{api}/game/{MatchId}", options =>
+            {
+                options.AccessTokenProvider = () => Task.FromResult<string?>(Auth.AccessToken);
+            })
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hub.On<int>("PlayerJoined", uid =>
+        {
+            lastEvent = $"Player {uid} joined";
+            return InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<JsonElement>("PlacementPhaseStarted", e =>
+        {
+            var msg = JsonSerializer.Deserialize<PlacementPhaseStartedMessage>(e.GetRawText(), HubJson);
+            if (msg is not null)
+            {
+                _placementDeadlineUtc = msg.DeadlineUtc;
+                StartPlacementCountdown();
+            }
+
+            lastEvent = "Placement phase started (45s)";
+            return InvokeAsync(() =>
+            {
+                ScheduleDraftSync();
+                StateHasChanged();
+            });
+        });
+
+        _hub.On<JsonElement>("BattleStarted", e =>
+        {
+            var msg = JsonSerializer.Deserialize<BattleStartedMessage>(e.GetRawText(), HubJson);
+            if (msg is null)
+                return Task.CompletedTask;
+
+            _inBattle = true;
+            _player1Id = msg.Player1Id;
+            _player2Id = msg.Player2Id;
+            _currentTurnPlayerId = msg.CurrentTurnPlayerId;
+            _placementDeadlineUtc = null;
+            _draftSyncCts?.Cancel();
+            _draftSyncCts?.Dispose();
+            _draftSyncCts = null;
+            _placementUiCts?.Cancel();
+            lastEvent = "Battle started";
+            PlacementFeedback = null;
+            _shotClockDeadlineUtc = DateTimeOffset.UtcNow.AddSeconds(15);
+            StartShotClockCountdown();
+            return InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<JsonElement>("ShotFired", e =>
+        {
+            var msg = JsonSerializer.Deserialize<ShotFiredMessage>(e.GetRawText(), HubJson);
+            if (msg is null || Auth.CurrentUser is null)
+                return Task.CompletedTask;
+
+            var me = Auth.CurrentUser.UserID;
+            if (msg.ShooterId == me)
+                _enemyIntel[(msg.X, msg.Y)] = msg.Result;
+            else
+                _incomingOnOwn[(msg.X, msg.Y)] = msg.Result;
+
+            _currentTurnPlayerId = msg.CurrentTurnPlayerId;
+            if (msg.ShotClockDeadlineUtc != default)
+            {
+                _shotClockDeadlineUtc = msg.ShotClockDeadlineUtc;
+                StartShotClockCountdown();
+            }
+
+            var suffix = msg.ForcedTimeout ? " (auto — open water)" : "";
+            ShotFeedback = $"Salvo {(msg.ShooterId == me ? "away" : "incoming")}: {msg.Result}{suffix}";
+            lastEvent = $"Shot {msg.Result}";
+            return InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<string>("ShotRejected", async reason =>
+        {
+            ShotFeedback = reason;
+            if (reason.Contains("already", StringComparison.OrdinalIgnoreCase) ||
+                reason.Contains("targeted", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    await JS.InvokeVoidAsync("battleGridSounds.playWarning");
+                }
+                catch
+                {
+                    // ignore missing audio context (SSR / autoplay policy)
+                }
+            }
+
+            await InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<JsonElement>("MatchEnded", e =>
+        {
+            var msg = JsonSerializer.Deserialize<MatchEndedMessage>(e.GetRawText(), HubJson);
+            if (msg is null)
+                return Task.CompletedTask;
+
+            _postMatchPhase = true;
+            _postMatchDeadlineUtc = msg.PostMatchDeadlineUtc;
+            _matchWinnerUserId = msg.WinnerUserId;
+            _p1RatingDelta = msg.Player1RatingChange;
+            _p2RatingDelta = msg.Player2RatingChange;
+            ResetShotUiTicker();
+            StartPostMatchCountdown();
+            lastEvent = "Match ended";
+            return InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<string>("MatchPersistFailed", msg =>
+        {
+            ShotFeedback = $"Could not save match: {msg}";
+            lastEvent = "Match persist failed";
+            return InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<string>("PlacementSaveFailed", msg =>
+        {
+            PlacementFeedback = $"Placement save failed: {msg}";
+            lastEvent = "Placement save failed";
+            return InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<JsonElement>("FleetPlacementSync", e =>
+        {
+            var msg = JsonSerializer.Deserialize<FleetPlacementSyncMessage>(e.GetRawText(), HubJson);
+            if (msg is not null)
+                ApplyFleetPlacementFromServer(msg);
+            lastEvent = "Fleet layout synced";
+            return InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<JsonElement>("YourBattleSnapshot", e =>
+        {
+            var msg = JsonSerializer.Deserialize<YourBattleSnapshotMessage>(e.GetRawText(), HubJson);
+            if (msg is not null)
+                ApplyBattleSnapshotFromServer(msg);
+            lastEvent = "Battle snapshot";
+            return InvokeAsync(StateHasChanged);
+        });
+
+        _hub.On<JsonElement>("MatchAbandoned", async _ =>
+        {
+            await InvokeAsync(async () =>
+            {
+                MatchSession.LeaveMatch();
+                ResetShotUiTicker();
+                try
+                {
+                    await JS.InvokeVoidAsync("battleGridMatchGuard.setActive", false);
+                }
+                catch
+                {
+                    // ignore
+                }
+
+                Nav.NavigateTo("/dashboard");
+            });
+        });
+
+        _hub.On<JsonElement>("BattleResynced", e =>
+        {
+            var msg = JsonSerializer.Deserialize<BattleStartedMessage>(e.GetRawText(), HubJson);
+            if (msg is null)
+                return Task.CompletedTask;
+            _inBattle = true;
+            _player1Id = msg.Player1Id;
+            _player2Id = msg.Player2Id;
+            _currentTurnPlayerId = msg.CurrentTurnPlayerId;
+            _draftSyncCts?.Cancel();
+            _draftSyncCts?.Dispose();
+            _draftSyncCts = null;
+            if (!_shotClockDeadlineUtc.HasValue || _shotClockDeadlineUtc.GetValueOrDefault() == default)
+                _shotClockDeadlineUtc = DateTimeOffset.UtcNow.AddSeconds(15);
+            StartShotClockCountdown();
+            return InvokeAsync(StateHasChanged);
+        });
+
+        _hub.Closed += async ex =>
+        {
+            status = ex is null ? "Disconnected from game hub." : $"Disconnected: {ex.Message}";
+            await InvokeAsync(StateHasChanged);
+        };
+
+        try
+        {
+            await _hub.StartAsync();
+            status = "Connected to game hub.";
+            MatchSession.EnterMatch(MatchId);
+            try
+            {
+                await JS.InvokeVoidAsync("battleGridMatchGuard.setActive", true);
+            }
+            catch
+            {
+                // ignore
+            }
+
+            ScheduleDraftSync();
+        }
+        catch (Exception ex)
+        {
+            status = $"Could not connect: {ex.Message}";
+        }
+    }
+
+    void StartPlacementCountdown()
+    {
+        _placementUiCts?.Cancel();
+        _placementUiCts?.Dispose();
+        _placementUiCts = new CancellationTokenSource();
+        var ct = _placementUiCts.Token;
+        _ = RunPlacementUiTicker(ct);
+    }
+
+    async Task RunPlacementUiTicker(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested && !_inBattle && _placementDeadlineUtc is { } d && DateTimeOffset.UtcNow < d)
+            {
+                await Task.Delay(500, ct);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            // ignore
+        }
+    }
+
+    void ApplyFleetPlacementFromServer(FleetPlacementSyncMessage msg)
+    {
+        if (msg.Cells is null || msg.Cells.Count == 0)
+            return;
+
+        if (fleetManifest is not null)
+        {
+            var manifestIds = fleetManifest.Select(s => s.ShipID).ToHashSet();
+            foreach (var key in _occupyingShipId.Keys.ToList())
+            {
+                if (_occupyingShipId.TryGetValue(key, out var sid) && manifestIds.Contains(sid))
+                    _occupyingShipId.Remove(key);
+            }
+        }
+        else
+            _occupyingShipId.Clear();
+
+        foreach (var c in msg.Cells)
+            _occupyingShipId[(c.X, c.Y)] = c.ShipTypeId;
+
+        _placedCount.Clear();
+        foreach (var c in msg.Cells)
+            _placedCount[c.ShipTypeId] = _placedCount.GetValueOrDefault(c.ShipTypeId) + 1;
+
+        if (msg.Placements is { Count: > 0 })
+        {
+            _placementOrder.Clear();
+            _placementOrder.AddRange(msg.Placements);
+        }
+
+        SelectedShip = null;
+        HoverCell = null;
+    }
+
+    void ApplyBattleSnapshotFromServer(YourBattleSnapshotMessage msg)
+    {
+        _player1Id = msg.Player1Id;
+        _player2Id = msg.Player2Id;
+        _currentTurnPlayerId = msg.CurrentTurnPlayerId;
+        _inBattle = true;
+        _enemyIntel.Clear();
+        _incomingOnOwn.Clear();
+        if (msg.MyOutgoing is not null)
+        {
+            foreach (var s in msg.MyOutgoing)
+                _enemyIntel[(s.X, s.Y)] = s.Result;
+        }
+
+        if (msg.IncomingOnOwn is not null)
+        {
+            foreach (var s in msg.IncomingOnOwn)
+                _incomingOnOwn[(s.X, s.Y)] = s.Result;
+        }
+
+        if (msg.OwnFleet is { Count: > 0 })
+        {
+            if (fleetManifest is not null)
+            {
+                var manifestIds = fleetManifest.Select(s => s.ShipID).ToHashSet();
+                foreach (var key in _occupyingShipId.Keys.ToList())
+                {
+                    if (_occupyingShipId.TryGetValue(key, out var sid) && manifestIds.Contains(sid))
+                        _occupyingShipId.Remove(key);
+                }
+            }
+
+            foreach (var c in msg.OwnFleet)
+                _occupyingShipId[(c.X, c.Y)] = c.ShipTypeId;
+            _placedCount.Clear();
+            foreach (var c in msg.OwnFleet)
+                _placedCount[c.ShipTypeId] = _placedCount.GetValueOrDefault(c.ShipTypeId) + 1;
+        }
+
+        _shotClockDeadlineUtc = msg.ShotClockDeadlineUtc != default
+            ? msg.ShotClockDeadlineUtc
+            : DateTimeOffset.UtcNow.AddSeconds(15);
+        StartShotClockCountdown();
+    }
+
+    void ResetShotUiTicker()
+    {
+        try
+        {
+            _shotUiCts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        try
+        {
+            _shotUiCts?.Dispose();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        _shotUiCts = null;
+    }
+
+    void StartShotClockCountdown()
+    {
+        ResetShotUiTicker();
+        if (!_inBattle || _postMatchPhase)
+            return;
+        _shotUiCts = new CancellationTokenSource();
+        _ = RunShotClockUiTicker(_shotUiCts.Token);
+    }
+
+    async Task RunShotClockUiTicker(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested && _inBattle && !_postMatchPhase)
+            {
+                await Task.Delay(250, ct);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (TaskCanceledException)
+        {
+            // ignore
+        }
+    }
+
+    async Task ConfirmLeaveMatchAsync()
+    {
+        bool ok;
+        try
+        {
+            ok = await JS.InvokeAsync<bool>("battleGridMatchGuard.confirmLeave");
+        }
+        catch
+        {
+            ok = false;
+        }
+
+        if (!ok)
+            return;
+
+        try
+        {
+            if (_hub is not null && _hub.State == HubConnectionState.Connected)
+                await _hub.InvokeAsync("ForfeitMatch", "User left match");
+        }
+        catch
+        {
+            // still leave UI
+        }
+
+        ResetShotUiTicker();
+        MatchSession.LeaveMatch();
+        try
+        {
+            await JS.InvokeVoidAsync("battleGridMatchGuard.setActive", false);
+        }
+        catch
+        {
+            // ignore
+        }
+
+        Nav.NavigateTo("/dashboard");
+    }
+
+    void StartPostMatchCountdown()
+    {
+        _postMatchUiCts?.Cancel();
+        _postMatchUiCts?.Dispose();
+        _postMatchUiCts = new CancellationTokenSource();
+        _ = RunPostMatchUiTicker(_postMatchUiCts.Token);
+    }
+
+    async Task RunPostMatchUiTicker(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested && _postMatchPhase && _postMatchDeadlineUtc is { } d && DateTimeOffset.UtcNow < d)
+            {
+                await Task.Delay(500, ct);
+                await InvokeAsync(StateHasChanged);
+            }
+
+            if (ct.IsCancellationRequested || !_postMatchPhase)
+                return;
+
+            await InvokeAsync(async () =>
+            {
+                _postMatchPhase = false;
+                MatchSession.LeaveMatch();
+                try
+                {
+                    await JS.InvokeVoidAsync("battleGridMatchGuard.setActive", false);
+                }
+                catch
+                {
+                    // ignore
+                }
+
+                Nav.NavigateTo("/dashboard");
+            });
+        }
+        catch (TaskCanceledException)
+        {
+            // ignore
+        }
+    }
+
+    async Task GoDashboardAsync()
+    {
+        _postMatchUiCts?.Cancel();
+        _postMatchPhase = false;
+        ResetShotUiTicker();
+        MatchSession.LeaveMatch();
+        try
+        {
+            await JS.InvokeVoidAsync("battleGridMatchGuard.setActive", false);
+        }
+        catch
+        {
+            // ignore
+        }
+
+        Nav.NavigateTo("/dashboard");
+    }
+
+    void OnAuthChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            if (Auth.IsInitialized && (!Auth.IsLoggedIn || string.IsNullOrEmpty(Auth.AccessToken)))
+                Nav.NavigateTo("/login");
+            StateHasChanged();
+            return Task.CompletedTask;
+        });
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Auth.OnChange -= OnAuthChanged;
+        try
+        {
+            _placementUiCts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        _placementUiCts?.Dispose();
+        _placementUiCts = null;
+        try
+        {
+            _draftSyncCts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        _draftSyncCts?.Dispose();
+        _draftSyncCts = null;
+        try
+        {
+            _postMatchUiCts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        _postMatchUiCts?.Dispose();
+        _postMatchUiCts = null;
+        ResetShotUiTicker();
+        MatchSession.LeaveMatch();
+        try
+        {
+            await JS.InvokeVoidAsync("battleGridMatchGuard.setActive", false);
+        }
+        catch
+        {
+            // ignore
+        }
+
+        if (_hub is not null)
+            await _hub.DisposeAsync();
+    }
+}

@@ -27,7 +27,11 @@ CREATE TABLE "PlayerStat" (
     "SeasonNo" INT NOT NULL, -- To track stats per season
     "MatchesPlayed" INT NOT NULL DEFAULT 0,
     "MatchesWon" INT NOT NULL DEFAULT 0,
-    "WinRate" DECIMAL(5, 2) GENERATED ALWAYS AS ("MatchesWon" * 100 / "MatchesPlayed") STORED CHECK ("WinRate" >= 0),
+    "WinRate" DECIMAL(5, 2) GENERATED ALWAYS AS (
+        CASE WHEN "MatchesPlayed" = 0 THEN CAST(0 AS DECIMAL(5, 2))
+             ELSE CAST(("MatchesWon"::numeric * 100 / "MatchesPlayed"::numeric) AS DECIMAL(5, 2))
+        END
+    ) STORED CHECK ("WinRate" >= 0),
     "Rating" INT NOT NULL DEFAULT 1000, -- Starting rating for new players
     "HighestRating" INT NOT NULL DEFAULT 1000, -- Will be updated whenever CurrentRating exceeds it
     "CreatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),

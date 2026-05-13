@@ -1,0 +1,228 @@
+﻿@page "/queue"
+@implements IAsyncDisposable
+@inject AuthStateService Auth
+@inject NavigationManager Nav
+@inject IConfiguration Config
+@using Microsoft.AspNetCore.SignalR.Client
+
+<PageTitle>Matchmaking — BattleGrid</PageTitle>
+
+@if (!Auth.IsInitialized)
+{
+    <div class="loading-screen"><p class="muted">Restoring session...</p></div>
+}
+else if (!Auth.IsLoggedIn || string.IsNullOrEmpty(Auth.AccessToken))
+{
+    <div class="loading-screen"><p class="muted">Redirecting to login...</p></div>
+}
+else
+{
+    <div class="page-header">
+        <h1><span class="accent">◈</span> MATCH QUEUE</h1>
+        <p class="muted">@status</p>
+    </div>
+    <div class="card card-accent" style="max-width: 36rem;">
+        <div class="card-body">
+            <p class="muted">Waiting for an opponent…</p>
+
+            @if (_hub is { State: HubConnectionState.Connected } && _queueStartedUtc is not null)
+            {
+                var elapsed = GetQueueElapsed();
+                var half = GetRatingHalfWindow(elapsed);
+                <div class="queue-live-stats">
+                    <div class="queue-stat-block">
+                        <span class="queue-stat-label">Time in queue</span>
+                        <span class="queue-stat-value">@FormatElapsed(elapsed)</span>
+                    </div>
+                    <div class="queue-stat-block">
+                        <span class="queue-stat-label">Rating search window: </span>
+                        <p class="queue-range-hint">
+                            Matching with players within <strong>±@half</strong> rating of you.                            
+                        </p>
+                        <p class="muted" style="font-size: 0.8rem;">
+                            The window grows by ±200 every 30 seconds (up to ±1000) while you wait.
+                        </p>
+                    </div>
+                </div>
+            }
+
+            <a href="/dashboard" class="btn btn-outline btn-full mt-sm">Leave queue (dashboard)</a>
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly TimeSpan RatingWindowStep = TimeSpan.FromSeconds(30);
+    private const int RatingInitialHalfWindow = 200;
+    private const int RatingWindowGrowthPerStep = 200;
+    private const int RatingMaxHalfWindow = 1000;
+
+    string status = "Connecting…";
+    HubConnection? _hub;
+    bool _started;
+    DateTimeOffset? _queueStartedUtc;
+    PeriodicTimer? _queueUiTimer;
+    CancellationTokenSource? _queueUiCts;
+
+    protected override void OnInitialized()
+    {
+        Auth.OnChange += OnAuthChanged;
+        if (Auth.IsInitialized && (!Auth.IsLoggedIn || string.IsNullOrEmpty(Auth.AccessToken)))
+            Nav.NavigateTo("/login");
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _started) return;
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn || string.IsNullOrEmpty(Auth.AccessToken))
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        _started = true;
+        await StartHubAsync();
+        StateHasChanged();
+    }
+
+    async Task StartHubAsync()
+    {
+        var api = Config["ApiBaseUrl"]?.TrimEnd('/') ?? "http://localhost:4744";
+        _hub = new HubConnectionBuilder()
+            .WithUrl($"{api}/queue", options =>
+            {
+                options.AccessTokenProvider = () => Task.FromResult<string?>(Auth.AccessToken);
+            })
+            .WithAutomaticReconnect()
+            .Build();
+
+        _hub.Reconnecting += _ =>
+        {
+            return InvokeAsync(async () =>
+            {
+                status = "Reconnecting…";
+                await StopQueueUiTimerAsync();
+                _queueStartedUtc = null;
+                StateHasChanged();
+            });
+        };
+
+        _hub.Reconnected += _ =>
+        {
+            return InvokeAsync(async () =>
+            {
+                status = "In queue — waiting for opponent…";
+                _queueStartedUtc = DateTimeOffset.UtcNow;
+                await StartQueueUiTimerAsync();
+                StateHasChanged();
+            });
+        };
+
+        _hub.Closed += async ex =>
+        {
+            await StopQueueUiTimerAsync();
+            _queueStartedUtc = null;
+            status = ex is null ? "Disconnected." : $"Disconnected: {ex.Message}";
+            await InvokeAsync(StateHasChanged);
+        };
+
+        _hub.On<int, int>("Matched", async (matchId, _) =>
+        {
+            await StopQueueUiTimerAsync();
+            await _hub!.StopAsync();
+            await InvokeAsync(() => Nav.NavigateTo($"/game/{matchId}"));
+        });
+
+        try
+        {
+            await _hub.StartAsync();
+            status = "In queue — waiting for opponent…";
+            _queueStartedUtc = DateTimeOffset.UtcNow;
+            await StartQueueUiTimerAsync();
+        }
+        catch (Exception ex)
+        {
+            status = $"Could not connect: {ex.Message}";
+        }
+    }
+
+    static int GetRatingHalfWindow(TimeSpan elapsedInQueue)
+    {
+        if (elapsedInQueue < TimeSpan.Zero)
+            elapsedInQueue = TimeSpan.Zero;
+
+        var periods = (int)Math.Floor(elapsedInQueue.TotalSeconds / RatingWindowStep.TotalSeconds);
+        var half = RatingInitialHalfWindow + periods * RatingWindowGrowthPerStep;
+        return Math.Min(RatingMaxHalfWindow, half);
+    }
+
+    TimeSpan GetQueueElapsed()
+    {
+        if (_queueStartedUtc is null)
+            return TimeSpan.Zero;
+        var e = DateTimeOffset.UtcNow - _queueStartedUtc.Value;
+        return e < TimeSpan.Zero ? TimeSpan.Zero : e;
+    }
+
+    static string FormatElapsed(TimeSpan e)
+    {
+        var total = (int)e.TotalSeconds;
+        var m = total / 60;
+        var s = total % 60;
+        return $"{m}:{s:D2}";
+    }
+
+    async Task StartQueueUiTimerAsync()
+    {
+        await StopQueueUiTimerAsync();
+        _queueUiCts = new CancellationTokenSource();
+        _queueUiTimer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+        var ct = _queueUiCts.Token;
+        _ = RunQueueUiLoopAsync(ct);
+        await InvokeAsync(StateHasChanged);
+    }
+
+    async Task RunQueueUiLoopAsync(CancellationToken ct)
+    {
+        try
+        {
+            while (!ct.IsCancellationRequested && _queueUiTimer is not null)
+            {
+                if (!await _queueUiTimer.WaitForNextTickAsync(ct))
+                    break;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { }
+    }
+
+    async Task StopQueueUiTimerAsync()
+    {
+        try { _queueUiCts?.Cancel(); } catch { /* disposed */ }
+        _queueUiTimer?.Dispose();
+        _queueUiTimer = null;
+        _queueUiCts?.Dispose();
+        _queueUiCts = null;
+        await Task.CompletedTask;
+    }
+
+    void OnAuthChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            if (Auth.IsInitialized && (!Auth.IsLoggedIn || string.IsNullOrEmpty(Auth.AccessToken)))
+                Nav.NavigateTo("/login");
+            StateHasChanged();
+            return Task.CompletedTask;
+        });
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Auth.OnChange -= OnAuthChanged;
+        await StopQueueUiTimerAsync();
+        if (_hub is not null)
+            await _hub.DisposeAsync();
+    }
+}

@@ -21,6 +21,7 @@ builder.Services.AddScoped(_ => new HttpClient
 
 builder.Services.AddScoped<AuthStateService>();
 builder.Services.AddScoped<ApiService>();
+builder.Services.AddSingleton<ActiveMatchSession>();
 
 var app = builder.Build();
 

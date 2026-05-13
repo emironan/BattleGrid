@@ -9,6 +9,9 @@ using BattleGrid.Application.Services;
 using BattleGrid.Application.Helpers;
 using BattleGrid.Infrastructure.Data;
 using BattleGrid.Domain.Entities;
+using BattleGrid.API.Hubs;
+using BattleGrid.API.Matchmaking;
+using BattleGrid.API.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -52,9 +55,29 @@ builder.Services
             ValidateLifetime = true,
             ClockSkew = TimeSpan.FromSeconds(15),
         };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) &&
+                    (path.StartsWithSegments("/queue") || path.StartsWithSegments("/game")))
+                {
+                    context.Token = accessToken;
+                }
+
+                return Task.CompletedTask;
+            }
+        };
     });
 
 builder.Services.AddAuthorization();
+
+builder.Services.AddSignalR();
+builder.Services.AddSingleton<MatchmakingCoordinator>();
+builder.Services.AddHostedService<MatchmakingBackgroundService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -97,8 +120,10 @@ builder.Services.AddScoped<IAdminServices, AdminServices>(); // Admin related se
 builder.Services.AddScoped<IUserServices, UserServices>(); // Rest of the User table related services. Also, include PlayerStat table related services here
 //aaa builder.Services.AddScoped<ISessionServices, SessionServices>(); // Rest of the Session table related services. Mostly, HTTP GET methods
 builder.Services.AddScoped<IShipTypeServices, ShipTypeServices>();
+builder.Services.AddScoped<IPlayerStatSeasonService, PlayerStatSeasonService>();
 builder.Services.AddScoped<IMatchServices, MatchServices>();
 builder.Services.AddScoped<IShipPlacementServices, ShipPlacementServices>();
+builder.Services.AddSingleton<InMemoryMatchGameService>();
 //aaa builder.Services.AddScoped<IReplayServices, ReplayServices>(); // Spectator table related services AND for normal users to replay their own matches
 //aaa builder.Services.AddScoped<IMatchMakingServices, MatchmakingServices>(); // If we can handle this in-memory with SignalR, we may get rid of MatchmakingQueue table and this service
 //aaa builder.Services.AddScoped<IMatchMoveServices, MatchMoveServices>();
@@ -119,6 +144,9 @@ app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+
+app.MapHub<QueueHub>("/queue");
+app.MapHub<GameHub>("/game/{matchId:int}");
 
 app.MapGet("/", () => "BattleGrid API is running.");
 

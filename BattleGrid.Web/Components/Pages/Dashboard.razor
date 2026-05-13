@@ -1,7 +1,8 @@
 @page "/dashboard"
-@implements IDisposable
+@implements IAsyncDisposable
 @inject AuthStateService Auth
 @inject NavigationManager Nav
+@inject ApiService Api
 
 <PageTitle>Dashboard — BattleGrid</PageTitle>
 
@@ -107,6 +108,12 @@ else
                 <span class="card-label">QUICK ACTIONS</span>
             </div>
             <div class="card-body quick-actions">
+                @if (_resumableMatchId is int mid)
+                {
+                    <p class="muted">You have a match in progress — rejoin to continue.</p>
+                    <a href="/game/@mid" class="btn btn-primary btn-full">REJOIN MATCH #@mid</a>
+                }
+                <a href="/queue" class="btn btn-primary btn-full">FIND A MATCH</a>
                 <a href="/users" class="btn btn-outline btn-full">VIEW ALL OPERATORS</a>
                 <a href="/shiptypes" class="btn btn-outline btn-full">VIEW FLEET REGISTRY</a>
                 <a href="http://localhost:4744/swagger" target="_blank" class="btn btn-outline btn-full">OPEN API DOCS ↗</a>
@@ -117,6 +124,9 @@ else
 }
 
 @code {
+    int? _resumableMatchId;
+    bool _resumableChecked;
+
     protected override void OnInitialized()
     {
         Auth.OnChange += OnAuthChanged;
@@ -124,10 +134,22 @@ else
             Nav.NavigateTo("/login");
     }
 
-    protected override void OnAfterRender(bool firstRender)
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (Auth.IsInitialized && !Auth.IsLoggedIn)
+        if (!firstRender || _resumableChecked)
+            return;
+
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn)
+        {
             Nav.NavigateTo("/login");
+            return;
+        }
+
+        _resumableChecked = true;
+        var dto = await Api.GetResumableMatchAsync();
+        _resumableMatchId = dto?.MatchId;
+        StateHasChanged();
     }
 
     private async void OnAuthChanged()
@@ -167,8 +189,9 @@ else
         return $"{expiry.Value:HH:mm:ss} UTC ({(int)remaining.TotalMinutes}m remaining)";
     }
 
-    public void Dispose()
+    public ValueTask DisposeAsync()
     {
         Auth.OnChange -= OnAuthChanged;
+        return ValueTask.CompletedTask;
     }
 }

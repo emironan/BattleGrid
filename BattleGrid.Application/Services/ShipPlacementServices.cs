@@ -52,5 +52,31 @@ namespace BattleGrid.Application.Services
                 Message = "Ship placed succesfully."
             };
         }
+
+        public async Task<GeneralResponseDto> SavePlacementsBatchAsync(
+            int matchId,
+            IReadOnlyList<(int PlayerID, int ShipID, int StartX, int StartY, bool IsVertical)> rowsInOrder)
+        {
+            foreach (var row in rowsInOrder)
+            {
+                await _context.ShipPlacement.AddAsync(new ShipPlacement
+                {
+                    PlayerID = row.PlayerID,
+                    MatchID = matchId,
+                    ShipID = row.ShipID,
+                    StartX = row.StartX,
+                    StartY = row.StartY,
+                    IsVertical = row.IsVertical
+                });
+            }
+
+            await _context.SaveChangesAsync();
+
+            return new GeneralResponseDto
+            {
+                Success = true,
+                Message = "Placements saved."
+            };
+        }
     }
 }
