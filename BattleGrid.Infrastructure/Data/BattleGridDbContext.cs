@@ -16,8 +16,7 @@ public sealed class BattleGridDbContext : DbContext
     public DbSet<MatchMove> MatchMove => Set<MatchMove>();
     public DbSet<ShipType> ShipType => Set<ShipType>();
     public DbSet<ShipPlacement> ShipPlacement => Set<ShipPlacement>();
-    public DbSet<Spectator> Spectator => Set<Spectator>();
-    public DbSet<MatchmakingQueue> MatchmakingQueue => Set<MatchmakingQueue>();
+    public DbSet<Spectator> Spectator => Set<Spectator>();  
     public DbSet<BanList> BanList => Set<BanList>();
 
 
@@ -29,6 +28,7 @@ public sealed class BattleGridDbContext : DbContext
         {
             entity.HasKey(x => x.UserID);
 
+            entity.Property(x => x.UserName).IsRequired().HasMaxLength(100);
             entity.HasIndex(x => x.UserName).IsUnique();
             entity.HasIndex(x => x.Email).IsUnique();
         });
@@ -139,18 +139,6 @@ public sealed class BattleGridDbContext : DbContext
                 .OnDelete(DeleteBehavior.NoAction);
         });
 
-        modelBuilder.Entity<MatchmakingQueue>(entity =>
-        {
-            entity.HasKey(x => x.QueueID);
-
-            entity.HasIndex(x => x.JoinedAt);
-
-            entity.HasOne<User>()
-                .WithOne()
-                .HasForeignKey<MatchmakingQueue>(x => x.PlayerID)
-                .OnDelete(DeleteBehavior.NoAction);
-        });
-
         modelBuilder.Entity<BanList>(entity =>
         {
             entity.HasKey(x => x.BanID);
@@ -164,6 +152,7 @@ public sealed class BattleGridDbContext : DbContext
             entity.HasIndex(x => new { x.IsTemporary, x.Duration });
             entity.HasIndex(x => new { x.IsTemporary, x.BannedUntil });
             entity.HasIndex(x => new { x.IsTemporary, x.BannedAt, x.Duration });
+            entity.HasIndex(x => x.RevertingAdminID);
 
             entity.HasOne<User>()
                 .WithMany()
@@ -172,6 +161,10 @@ public sealed class BattleGridDbContext : DbContext
             entity.HasOne<User>()
                 .WithMany()
                 .HasForeignKey(x => x.PlayerID)
+                .OnDelete(DeleteBehavior.NoAction);
+            entity.HasOne<User>()
+                .WithMany()
+                .HasForeignKey(x => x.RevertingAdminID)
                 .OnDelete(DeleteBehavior.NoAction);
         });
     }

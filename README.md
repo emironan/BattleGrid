@@ -33,22 +33,29 @@
 	
 		- Server backend. This is the main part of the project.
 		  It will handle all the game logic and communication with clients.
-		  It is built using ASP.NET Core and RESTful APIs
-			and SignalR will be implemented in the future for real-time 
-			communication/handling of user interactions.
+		  It is built using ASP.NET Core. 
+		  It uses RESTful APIs for DB related functionality
+			and it uses SignalR for for real-time communication/handling of user interactions.
 		  
 		  API, Application, Contracts, Domain, and Infrastructure belong to server backend.
 
-		  For now, API endpoints include register a user, get user info, 
-			get ship type list and save ship placement in DB.
-		  Game logic is implemented in the backend, in BattleGrid.Domain/GameLogic folder.
-		  It will not be implemented with API controllers, but rather with SignalR hubs in the future.
+		  Currently, API endpoints include a wide range of functionality. Including but not limited to:
+		  - Register as a user 
+		  - Get all user info or a certain user's info
+		  - Get ship type list
+		  - Save ship placements in DB
+		  - Save match moves in DB
+		  - Player stat updates in DB etc.
 
+		  Game logic is implemented in the backend, in BattleGrid.Domain/GameLogic folder.
+
+		  To run the server:
 		  Open a terminal window in your IDE and in the main project folder,
 			run the commands in order:
 			
-			dotnet build		/* This will build the entire solution, all 3 projects:
-								 * Server, Console and Tests;
+			dotnet clean		// To clean the previous build's output; like, binaries
+			dotnet build		/* This will build the entire solution, all 4 projects:
+								 * Server, Console, Web and Tests;
 						 		 *  and restore any necessary packages.
 						 		 */
 			cd BattleGrid.API	// This will move to the server backend project folder
@@ -71,6 +78,9 @@
 		  And we control if the game flow is working correctly 
 			and if the game end condition is detected properly.
 
+		  For this one, you do not need the server running. It is completely separate from APIs or Hubs.
+		  It just uses the /GameLogic to fire up a game.
+
 		  Again, open another terminal or do a `cd ..` in the first one
 
 			cd BattleGrid.Console	// Moves to the console app project folder
@@ -89,7 +99,10 @@
 			   where you can finally, actually play the game!
 
 
-		  Open a new terminal
+		  While the backend server is running on a terminal, 
+		   open a new terminal in the project's main folder.
+		  Assuming you followed the instructions to run the server, 
+		   Web project is also built and ready.
 
 		  cd BattleGrid.Web
 		  dotnet run
@@ -104,6 +117,7 @@
 				or after placing only some of your ships.
 			- never fire a shot.
 			- fire a shot on an already targeted area.
+			- fire a shot on your own board.
 			- play the game the way it was supposed to be.
 			- play the game the way it was not supposed to be.
 
@@ -123,7 +137,8 @@
 		  It does not include tests for API endpoints, yet. 
 		  We may implement it in the future.
 
-		  Open another terminal or do a `cd ..` in the first one
+		  Open a terminal, and again assuming you built the project while following instructions for
+		   server part.
 
 			cd BattleGrid.Tests	// Moves to the test project folder
 			dotnet test			/* This will run all the tests in the project

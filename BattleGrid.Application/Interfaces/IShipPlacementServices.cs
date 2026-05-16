@@ -9,7 +9,7 @@ namespace BattleGrid.Application.Interfaces
     {
         Task<GeneralResponseDto> PlaceShipAsync(PlaceShipRequestDto dto);
 
-        /// <summary>Inserts rows in list order within a single transaction (preserves placement order).</summary>
+        /// <summary> Inserts rows in list order within a single transaction (preserves placement order). </summary>
         Task<GeneralResponseDto> SavePlacementsBatchAsync(int matchId, IReadOnlyList<(int PlayerID, int ShipID, int StartX, int StartY, bool IsVertical)> rowsInOrder);
     }
 }

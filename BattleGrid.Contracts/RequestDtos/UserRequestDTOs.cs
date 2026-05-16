@@ -3,19 +3,6 @@ using System.Text.Json.Serialization;
 
 namespace BattleGrid.Contracts.RequestDtos
 {
-    // Used for updating user's ban status etc by the system services.
-    public class UserUpdateSystemRequestDto
-    {
-        [Required]
-        public int UserID { get; set; }
-
-        // Can be used for removing/updating inappropriate usernames
-        public string? UserName { get; set; }
-
-        // Only make it true when we are going to lift someones ban (like ban's duration has passed)
-        public bool BanLifted { get; set; } = false;        
-    }
-
     // Used by users to update their UserName, Email
     public class UserUpdateUserRequestDto
     {

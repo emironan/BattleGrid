@@ -22,6 +22,13 @@ public sealed class QueueHub : Hub
         await base.OnConnectedAsync();
     }
 
+    public Task VoluntaryLeaveQueue()
+    {
+        var userId = GetUserId(Context);
+        _matchmaking.RemoveFromQueueVoluntarily(userId);
+        return Task.CompletedTask;
+    }
+
     public override Task OnDisconnectedAsync(Exception? exception)
     {
         _matchmaking.OnQueueDisconnected(Context.ConnectionId);

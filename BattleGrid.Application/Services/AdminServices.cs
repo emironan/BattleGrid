@@ -27,28 +27,6 @@ namespace BattleGrid.Application.Services
         // NOTE: This service assumes User.IsBanned and BanList entries are in sync and up-to-date!
         public async Task<GeneralResponseDto> BanPlayerAsync(BanRequestDto dto)
         {
-            //aaa Ban a player
-            /* +1 - Check if the AdminID is valid
-             * 
-             * +2 - Check if the Player info is valid
-             * 
-             * +3 - Check if the player is already banned
-             * What we do here depends on different things
-             * 
-             *   +3.1 - If the player is already permanently banned; what is the point of a temporary ban
-             *   or another permanent ban? Do NOTHING!
-             *   
-             *   +3.2 - If the player is temporarily banned and the admin wants to ban that player permanently, 
-             *   we can go ahead and create a new record for permanent ban.
-             *   Since we are checking for the last ban entry for any player before preventing certain actions
-             *   or updating BanList entries, this should be fine
-             *   
-             *   +3.3 - If the player is temporarily banned and the admin wants to issue another temporary ban
-             *   we can simply choose the longer duration and apply it to the existing ban
-             *   
-             * +4 - Update User and BanList tables accordingly
-             */
-
             // Create the response with default and/or null values
             var response = new GeneralResponseDto
             {
@@ -118,14 +96,11 @@ namespace BattleGrid.Application.Services
                         {
                             AdminID = dto.AdminID,
                             PlayerID = user.UserID,
-                            // NOTE: IsReverted will be false by default
-                            // NOTE: RevertingAdminID will be null by default
                             BanReason = dto.BanReason,
                             IsTemporary = dto.IsTemporary,
-                            // NOTE: BannedAt has a default value, NOW() in DB
-                            // Duration = TimeSpan.FromDays(36500), // Permanently banned. 100 years by default
-                            // NOTE: BannedUntil should be calculated by DB based on BannedAt and Duration fields
-                            //aaa TODO: Add a SP and a trigger to calcuate and update the BannedUntil field of each new TEMPORARY ban entry
+                            BannedAt = dto.BannedAt,
+                            Duration = dto.Duration,
+                            BannedUntil = ResolveBannedUntil(dto)
                         };
 
                         // Save changes to the DB
@@ -142,6 +117,7 @@ namespace BattleGrid.Application.Services
                         if (latestBan.Duration < dto.Duration)
                         {
                             latestBan.Duration = dto.Duration;
+                            latestBan.BannedUntil = ResolveBannedUntil(dto, latestBan.BannedAt);
                             await _context.SaveChangesAsync();
 
                             response.Message = "Ban duration is increased.";
@@ -157,20 +133,16 @@ namespace BattleGrid.Application.Services
             // Player is not currently banned. Create a new BanList entry
             //aaa TODO: Remove the 'if (latestBan.IsTemporary && !dto.IsTemporary)' section. Since, it can simply be handled here
             //aaa Player is temporarily banned, we are issuing a permanent ban. Create a new BanList entry
-            //
+            
             var banEntry = new BanList
             {
                 AdminID = dto.AdminID,
                 PlayerID = user.UserID,
-                // NOTE: IsReverted will be false by default
-                // NOTE: RevertingAdminID will be null by default
                 BanReason = dto.BanReason,
-                IsTemporary = dto.IsTemporary, // false by default, meaning permanent ban!
+                IsTemporary = dto.IsTemporary,
                 BannedAt = dto.BannedAt,
-                Duration = dto.Duration, // 100 years by default, meaning permanent ban!
-                // NOTE: BannedUntil should be calculated by DB based on BannedAt and Duration fields. For now, let's set it with the DTO
-                BannedUntil = dto.BannedUntil
-                //aaa TODO: Add a SP and a trigger to calcuate and update the BannedUntil field of each new TEMPORARY ban entry
+                Duration = dto.Duration,
+                BannedUntil = ResolveBannedUntil(dto)
             };
 
             // Update the User table entry, as well
@@ -186,40 +158,79 @@ namespace BattleGrid.Application.Services
             response.Message = $"Player {dto.PlayerInfo} is banned for {dto.Duration} days.";
             return response;
         }
-                
 
-        /*
-        public async Task<GeneralResponseDto> UndoPermanentBan(UndoPermanentBanRequestDto dto)
+        public async Task<GeneralResponseDto> UnbanPlayerAsync(UnbanPlayerRequestDto dto)
         {
-            //aaa TODO: Undo a permanent ban
-            /* 1 - Check if the AdminID is valid
-             * 2 - Check if the PlayerID is valid
-             * 3 - Check if the ban record is valid / player is actually banned
-             *  3.1 - Make sure it is a permanent ban
-             * 4 - Undo the ban. Do not forget to update the RevertingAdminID field of the BanList table
-             * We may need it for audit purposes
-             *
-             
-            // Do not forget to update User.IsBanned, as well 
+            var response = new GeneralResponseDto { Success = false, Message = string.Empty };
+
+            var admin = await _userServices.GetByIdAsync(dto.AdminID);
+            if (admin is null || !admin.IsAdmin)
+            {
+                response.Message = "You do NOT have permissions to complete this action!";
+                return response;
+            }
+
+            dto.PlayerInfo = await _normalizationHelper.NormalizeLoginInfoAsync(dto.PlayerInfo);
+            var reason = dto.Reason.Trim();
+            if (string.IsNullOrWhiteSpace(reason))
+            {
+                response.Message = "A reason is required to unban a player.";
+                return response;
+            }
+
+            var user = await _context.User
+                .Where(u => u.Email == dto.PlayerInfo || u.UserName == dto.PlayerInfo)
+                .FirstOrDefaultAsync();
+
+            if (user is null)
+            {
+                response.Message = "There is no such user.";
+                return response;
+            }
+
+            var latestActiveBan = await _context.BanList
+                .Where(b => b.PlayerID == user.UserID && !b.IsReverted)
+                .OrderByDescending(b => b.BanID)
+                .FirstOrDefaultAsync();
+
+            if (latestActiveBan is null && !user.IsBanned)
+            {
+                response.Message = "This player is not currently banned.";
+                return response;
+            }
+
+            var now = DateTimeOffset.UtcNow.ToUniversalTime();
+
+            if (latestActiveBan is not null)
+            {
+                latestActiveBan.IsReverted = true;
+                latestActiveBan.RevertingAdminID = dto.AdminID;
+                latestActiveBan.RevertingReason = reason;
+            }
+
             user.IsBanned = false;
-            user.LastUpdatedAt = DateTimeOffset.UtcNow.ToUniversalTime();
-            user.UpdateReason = "Permanent ban is reverted by admins!";
+            user.LastUpdatedAt = now;
+            user.UpdateReason = $"Ban reverted by administrator (admin #{dto.AdminID}).";
 
             await _context.SaveChangesAsync();
-            *
-            *
-        }
-        */
 
-        /*
-        public async Task<GeneralResponseDto> UpdateBanStatus(UpdateBanStatusRequestDto dto)
-        {
-            //aaa TODO: Update ban status accross User and BanList tables
-            /* 1 - Check if the AdminID is valid //***AdminID = 0 means background services made the changes automatically
-             * 2 - Check if the PlayerID is valid
-             * 3 - Update the ban status accordingly. Make sure to update both User and BanList tables when required
-             *
+            response.Success = true;
+            response.Message = latestActiveBan is null
+                ? $"Player {dto.PlayerInfo} is unbanned (user flag cleared; no active ban row was found)."
+                : $"Player {dto.PlayerInfo} has been unbanned. Ban #{latestActiveBan.BanID} was reverted.";
+            return response;
         }
-        */
+
+        private static DateTimeOffset? ResolveBannedUntil(BanRequestDto dto, DateTimeOffset? bannedAtOverride = null)
+        {
+            if (dto.BannedUntil.HasValue)
+                return dto.BannedUntil.Value.ToUniversalTime();
+
+            if (!dto.IsTemporary || !dto.Duration.HasValue)
+                return null;
+
+            var bannedAt = (bannedAtOverride ?? dto.BannedAt).ToUniversalTime();
+            return bannedAt.Add(dto.Duration.Value);
+        }
     }
 }

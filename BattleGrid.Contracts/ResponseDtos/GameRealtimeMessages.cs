@@ -32,6 +32,10 @@ public sealed class BattleStartedMessage
 public sealed class MatchEndedMessage
 {
     public int WinnerUserId { get; set; }
+    public int Player1Id { get; set; }
+    public int Player2Id { get; set; }
+    public string? Player1UserName { get; set; }
+    public string? Player2UserName { get; set; }
     public int Player1RatingChange { get; set; }
     public int Player2RatingChange { get; set; }
     public DateTimeOffset PostMatchDeadlineUtc { get; set; }
@@ -41,6 +45,34 @@ public sealed class MatchEndedMessage
 public sealed class ResumableMatchResponseDto
 {
     public int MatchId { get; set; }
+}
+
+/// <summary>
+/// Returned when a match is already finished in the database (e.g. UI server restarted while API kept running).
+/// Lets the client show the post-match screen without relying on a missed SignalR <c>MatchEnded</c>.
+/// </summary>
+public sealed class MatchRecoveryStateDto
+{
+    public int MatchId { get; set; }
+
+    /// <summary>Match status enum value (same as domain <c>MatchStatus</c>).</summary>
+    public int Status { get; set; }
+
+    public int Player1Id { get; set; }
+    public int Player2Id { get; set; }
+
+    public string? Player1UserName { get; set; }
+    public string? Player2UserName { get; set; }
+
+    /// <summary>Null when <see cref="Status"/> is <c>Abandoned</c> with no winner.</summary>
+    public int? WinnerUserId { get; set; }
+
+    public int Player1RatingChange { get; set; }
+    public int Player2RatingChange { get; set; }
+
+    public int TotalNoOfMoves { get; set; }
+
+    public string? FinishReason { get; set; }
 }
 
 public sealed class FleetLayoutCellDto

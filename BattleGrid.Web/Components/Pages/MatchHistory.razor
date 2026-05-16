@@ -1,0 +1,228 @@
+@page "/match-history"
+@implements IAsyncDisposable
+@inject AuthStateService Auth
+@inject NavigationManager Nav
+@inject ApiService Api
+
+<PageTitle>Match History - BattleGrid</PageTitle>
+
+@if (!Auth.IsInitialized)
+{
+    <div class="loading-screen">
+        <p class="muted">Restoring session...</p>
+    </div>
+}
+else if (!Auth.IsLoggedIn)
+{
+    <div class="loading-screen">
+        <p class="muted">Redirecting to login...</p>
+    </div>
+}
+else
+{
+    <div class="match-history-page">
+    <div class="page-header match-history-header">
+        <h1><span class="accent">◈</span> MATCH HISTORY</h1>
+        <p class="muted">Last @MaxHistoryMatches matches</p>
+    </div>
+
+    @if (!_loaded)
+    {
+        <div class="loading-state">
+            <div class="radar-ping"></div>
+            <p class="muted">Loading match records...</p>
+        </div>
+    }
+    else if (_errorMessage is { } err)
+    {
+        <div class="alert alert-danger">
+            <span>✘</span> @err
+        </div>
+    }
+    else if (_matches.Count == 0)
+    {
+        <div class="alert alert-info">No completed matches yet. Find a match from the dashboard to build your record.</div>
+    }
+    else
+    {
+        <div class="table-toolbar">
+            <span class="muted">@_matches.Count match(es) shown</span>
+            <button type="button" class="btn btn-outline btn-sm" @onclick="ReloadAsync">↻ REFRESH</button>
+        </div>
+
+        <div class="table-wrapper">
+            <table class="data-table match-history-table">
+                <thead>
+                    <tr>
+                        <th></th>
+                        <th>MATCH</th>
+                        <th>OPPONENT</th>
+                        <th>RESULT</th>
+                        <th>RATING CHANGE</th>
+                        <th>END TYPE</th>
+                        <th>FINISHED</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var m in _matches)
+                    {
+                        <tr>
+                            <td class="match-history-replay-cell">
+                                @if (CanReplay(m.Status))
+                                {
+                                    <a href="/replay/@m.MatchId" class="btn btn-sm btn-primary">REPLAY</a>
+                                }
+                            </td>
+                            <td class="cell-id">#@m.MatchId</td>
+                            <td>@m.OpponentUserName</td>
+                            <td>
+                                @if (m.PlayerWon is true)
+                                {
+                                    <span class="badge badge-success">WIN</span>
+                                }
+                                else if (m.PlayerWon is false)
+                                {
+                                    <span class="badge badge-danger">LOSS</span>
+                                }
+                                else
+                                {
+                                    <span class="badge badge-player">—</span>
+                                }
+                            </td>
+                            <td class="@GetRatingCellClass(m.RatingChange)">@FormatSignedDelta(m.RatingChange)</td>
+                            <td>
+                                <span class="badge @(GetEndKindBadgeClass(m.EndKind) ?? "badge-player")">@FormatEndKind(m.EndKind)</span>
+                            </td>
+                            <td class="cell-email muted">
+                                @(m.FinishedAt?.UtcDateTime.ToString("yyyy-MM-dd HH:mm UTC") ?? "—")
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+    </div>
+}
+
+@code {
+    const int MaxHistoryMatches = 20;
+
+    bool _loaded;
+    bool _pageDataLoaded;
+    string? _errorMessage;
+    List<MatchHistoryEntryResponseDto> _matches = new();
+
+    protected override void OnInitialized()
+    {
+        Auth.OnChange += OnAuthChanged;
+        if (Auth.IsInitialized && !Auth.IsLoggedIn)
+            Nav.NavigateTo("/login");
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _pageDataLoaded)
+            return;
+
+        await TryLoadPageDataAsync();
+    }
+
+    async Task TryLoadPageDataAsync()
+    {
+        if (_pageDataLoaded)
+            return;
+
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        _pageDataLoaded = true;
+        await LoadHistoryAsync();
+    }
+
+    async Task LoadHistoryAsync()
+    {
+        _loaded = false;
+        _errorMessage = null;
+
+        try
+        {
+            var dto = await Api.GetMatchHistoryAsync(MaxHistoryMatches);
+            if (dto is null)
+            {
+                _matches = new();
+                _errorMessage = "Failed to load match history. Is the API running?";
+            }
+            else
+            {
+                _matches = dto.Matches.ToList();
+                _errorMessage = null;
+            }
+        }
+        catch (Exception ex)
+        {
+            _matches = new();
+            _errorMessage = $"Failed to load match history: {ex.Message}";
+        }
+        finally
+        {
+            _loaded = true;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    async Task ReloadAsync()
+    {
+        _pageDataLoaded = true;
+        await LoadHistoryAsync();
+    }
+
+    private async void OnAuthChanged()
+    {
+        await InvokeAsync(async () =>
+        {
+            if (Auth.IsInitialized && !Auth.IsLoggedIn)
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+
+            if (Auth.IsInitialized && Auth.IsLoggedIn && !_pageDataLoaded)
+                await TryLoadPageDataAsync();
+            else
+                StateHasChanged();
+        });
+    }
+
+    /// <summary>Replay is only available for decisive outcomes (<see cref="MatchStatus.P1Won"/> / <see cref="MatchStatus.P2Won"/>).</summary>
+    static bool CanReplay(int status) =>
+        status == (int)MatchStatus.P1Won || status == (int)MatchStatus.P2Won;
+
+    static string FormatSignedDelta(int delta) =>
+        delta > 0 ? $"+{delta}" : delta.ToString();
+
+    static string GetRatingCellClass(int delta) =>
+        delta > 0 ? "match-history-rating--up" : delta < 0 ? "match-history-rating--down" : "";
+
+    static string FormatEndKind(MatchHistoryEndKind kind) => kind switch
+    {
+        MatchHistoryEndKind.NormalBattle => "All ships destroyed",
+        MatchHistoryEndKind.OpponentLeft => "Opponent left",
+        MatchHistoryEndKind.SelfLeft => "You left",
+        MatchHistoryEndKind.Abandoned => "Abandoned",
+        _ => "Unknown"
+    };
+
+    static string? GetEndKindBadgeClass(MatchHistoryEndKind kind) =>
+        kind == MatchHistoryEndKind.SelfLeft ? "badge-match-history-self-left" : null;
+
+    public ValueTask DisposeAsync()
+    {
+        Auth.OnChange -= OnAuthChanged;
+        return ValueTask.CompletedTask;
+    }
+}

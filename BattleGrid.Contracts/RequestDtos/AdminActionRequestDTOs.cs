@@ -29,23 +29,14 @@ namespace BattleGrid.Contracts.RequestDtos
         public DateTimeOffset? BannedUntil { get; set; }
     }
 
-    public class UndoPermanentBanRequestDto
+    public class UnbanPlayerRequestDto
     {
         [JsonIgnore]
         [Required]
-        public int AdminID { get; set; } // Will also be used as RevertingAdminID
+        public int AdminID { get; set; }
 
-        //aaa We may or may not need UsedID directly. We will uncomment this if the need arises
-        // public int UserID { get; set; }
-
-        // Email or UserName of the user to be banned
         [Required]
-        public string UserInfo { get; set; } = string.Empty;
-
-        // Since we are undoing a ban, this will always be true
-        [JsonIgnore]
-        [Required]
-        public bool IsReverted { get; set; } = true;
+        public string PlayerInfo { get; set; } = string.Empty;
 
         [Required]
         public string Reason { get; set; } = string.Empty;

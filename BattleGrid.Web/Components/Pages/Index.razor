@@ -1,20 +1,12 @@
 @page "/"
+@implements IDisposable
 @inject ApiService Api
 @inject AuthStateService Auth
-@inject NavigationManager Nav
+@inject ResumableMatchService Resumable
 
-<PageTitle>BattleGrid — Command Center</PageTitle>
+<PageTitle>BattleGrid - Command Center</PageTitle>
 
-@if (Auth.IsInitialized && Auth.IsLoggedIn)
-{
-    <div class="loading-screen">
-        <p class="muted">Redirecting to dashboard...</p>
-    </div>
-}
-else
-{
 <div class="hero">
-    <div class="hero-grid-overlay"></div>
     <div class="hero-content">
         <div class="hero-badge">NAVAL COMMAND SYSTEM v1.0</div>
         <h1 class="hero-title">BATTLE<span class="accent">GRID</span></h1>
@@ -22,8 +14,15 @@ else
         <div class="hero-actions">
             @if (Auth.IsLoggedIn)
             {
-                <a href="/dashboard" class="btn btn-primary btn-lg">OPEN DASHBOARD</a>
-                <a href="/shiptypes" class="btn btn-outline btn-lg">VIEW FLEET</a>
+                @if (Resumable.HasResumableMatch && Resumable.MatchId is int mid)
+                {
+                    <a href="/game/@mid" class="btn btn-primary btn-lg">REJOIN MATCH #@mid</a>
+                }
+                else
+                {
+                    <a href="/queue" class="btn btn-primary btn-lg">FIND A MATCH</a>
+                }
+                <a href="/dashboard" class="btn btn-outline btn-lg">DASHBOARD</a>
             }
             else
             {
@@ -52,7 +51,7 @@ else
                     <span class="status-badge @(apiOnline ? "online" : "offline")">
                         @(apiOnline ? "● ONLINE" : "● OFFLINE")
                     </span>
-                    <p class="muted mt-sm">@(apiOnline ? "API responding at localhost:4744" : "API unreachable")</p>
+                    <p class="muted mt-sm">@(apiOnline ? "API responding. Secure connection established." : "API unreachable. Secure connection lost!")</p>
                 }
             </div>
         </div>
@@ -63,15 +62,20 @@ else
                 <span class="card-label">OPERATOR</span>
             </div>
             <div class="card-body">
-                @if (Auth.IsLoggedIn)
+                @if (!Auth.IsInitialized)
+                {
+                    <span class="muted">Checking session…</span>
+                }
+                else if (Auth.IsLoggedIn)
                 {
                     <span class="status-badge online">● AUTHENTICATED</span>
-                    <p class="muted mt-sm">@(Auth.CurrentUser?.UserName ?? Auth.CurrentUser?.Email)</p>
+                    <p class="muted mt-sm">@(string.IsNullOrWhiteSpace(Auth.CurrentUser?.UserName) ? "-" : Auth.CurrentUser!.UserName)</p>
+                    <p class="muted mt-sm">@(apiOnline ? "All systems operational" : "Some systems are experiencing technical issues")</p>
                 }
                 else
                 {
                     <span class="status-badge offline">● NOT LOGGED IN</span>
-                    <p class="muted mt-sm"><a href="/login" class="link">Login to access full system</a></p>
+                    <p class="muted mt-sm">@(apiOnline ? "Login to access full system" : "Some systems are experiencing technical issues. Please try again later")</p>
                 }
             </div>
         </div>
@@ -83,30 +87,44 @@ else
             </div>
             <div class="card-body">
                 <span class="status-badge online">● CONNECTED</span>
-                <p class="muted mt-sm">PostgreSQL</p>
+                <p class="muted mt-sm">System data is safe and secure</p>
             </div>
         </div>
     </div>
 </div>
-}
 
 @code {
     bool apiLoading = true;
     bool apiOnline = false;
+    bool _initialized;
+
+    protected override void OnInitialized()
+    {
+        Auth.OnChange += OnAuthChanged;
+        Resumable.OnChange += OnResumableChanged;
+    }
+
+    void OnAuthChanged() => InvokeAsync(StateHasChanged);
+
+    void OnResumableChanged() => InvokeAsync(StateHasChanged);
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (Auth.IsInitialized && Auth.IsLoggedIn)
-        {
-            Nav.NavigateTo("/dashboard");
+        if (!firstRender || _initialized)
             return;
-        }
 
-        if (firstRender)
-        {
-            apiOnline = await Api.CheckApiHealthAsync();
-            apiLoading = false;
-            StateHasChanged();
-        }
+        _initialized = true;
+        await Auth.InitializeAsync();
+        if (Auth.IsLoggedIn)
+            await Resumable.RefreshAsync();
+        apiOnline = await Api.CheckApiHealthAsync();
+        apiLoading = false;
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        Auth.OnChange -= OnAuthChanged;
+        Resumable.OnChange -= OnResumableChanged;
     }
 }

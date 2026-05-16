@@ -26,5 +26,15 @@ window.bgAuth = {
             method: "POST",
             credentials: "include"
         });
+    },
+
+    // User-initiated logout: wipe client-side persistence for this origin (with cookie clear).
+    clearBrowserStorages: function () {
+        try {
+            localStorage.clear();
+        } catch { }
+        try {
+            sessionStorage.clear();
+        } catch { }
     }
 };

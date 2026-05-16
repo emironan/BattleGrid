@@ -1,9 +1,11 @@
 ﻿using BattleGrid.Application.Interfaces;
 using BattleGrid.Contracts.ResponseDtos;
+using BattleGrid.Domain;
 using BattleGrid.Domain.Entities;
 using BattleGrid.Domain.Enums;
 using BattleGrid.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace BattleGrid.Application.Services
 {
@@ -11,11 +13,16 @@ namespace BattleGrid.Application.Services
     {
         private readonly BattleGridDbContext _context;
         private readonly IPlayerStatSeasonService _playerStatSeason;
+        private readonly IOptions<RatingFormulaSettings> _ratingFormula;
 
-        public MatchServices(BattleGridDbContext context, IPlayerStatSeasonService playerStatSeason)
+        public MatchServices(
+            BattleGridDbContext context,
+            IPlayerStatSeasonService playerStatSeason,
+            IOptions<RatingFormulaSettings> ratingFormula)
         {
             _context = context;
             _playerStatSeason = playerStatSeason;
+            _ratingFormula = ratingFormula;
         }
 
         public async Task<List<int>> GetPlayersAsync(int matchId)
@@ -82,10 +89,11 @@ namespace BattleGrid.Application.Services
             return new GeneralResponseDto { Success = true, Message = "Match updated." };
         }
 
-        public async Task<GeneralResponseDto> PersistCompletedBattleAsync(
+        public async Task<PersistCompletedBattleResponseDto> PersistCompletedBattleAsync(
             int matchId,
             int winnerUserId,
-            IReadOnlyList<(int shooterId, int moveNumber, int hitX, int hitY, bool hit)> moves)
+            IReadOnlyList<(int shooterId, int moveNumber, int hitX, int hitY, bool hit)> moves,
+            string? finishReason = null)
         {
             await using var tx = await _context.Database.BeginTransactionAsync();
             try
@@ -94,31 +102,45 @@ namespace BattleGrid.Application.Services
                 if (match is null)
                 {
                     await tx.RollbackAsync();
-                    return new GeneralResponseDto { Success = false, Message = "Match not found." };
+                    return new PersistCompletedBattleResponseDto { Success = false, Message = "Match not found." };
                 }
 
-                if (match.Status == MatchStatus.P1Won || match.Status == MatchStatus.P2Won)
+                if (match.Status == MatchStatus.P1Won || match.Status == MatchStatus.P2Won || match.Status == MatchStatus.Abandoned)
                 {
                     await tx.CommitAsync();
-                    return new GeneralResponseDto { Success = true, Message = "Match already finalized." };
+                    return new PersistCompletedBattleResponseDto
+                    {
+                        Success = true,
+                        Message = "Match already finalized.",
+                        Player1RatingChange = match.P1RatingChange ?? 0,
+                        Player2RatingChange = match.P2RatingChange ?? 0
+                    };
                 }
 
                 if (winnerUserId != match.Player1ID && winnerUserId != match.Player2ID)
                 {
                     await tx.RollbackAsync();
-                    return new GeneralResponseDto { Success = false, Message = "Winner is not a player in this match." };
+                    return new PersistCompletedBattleResponseDto { Success = false, Message = "Winner is not a player in this match." };
                 }
 
-                const int delta = 15;
+                var p1Season = await _playerStatSeason.EnsureMatchmakingRatingAsync(match.Player1ID);
+                var p2Season = await _playerStatSeason.EnsureMatchmakingRatingAsync(match.Player2ID);
+                var r1 = PlayerRatingBounds.ClampRating(p1Season.RatingForQueue);
+                var r2 = PlayerRatingBounds.ClampRating(p2Season.RatingForQueue);
                 var p1Won = winnerUserId == match.Player1ID;
-                var p1Delta = p1Won ? delta : -delta;
-                var p2Delta = p1Won ? -delta : delta;
+                var (p1Delta, p2Delta) = MatchRatingFormula.ComputeDeltasForPlayers(
+                    r1,
+                    r2,
+                    p1Won,
+                    _ratingFormula.Value);
 
                 match.Status = p1Won ? MatchStatus.P1Won : MatchStatus.P2Won;
-                match.FinishedAt = DateTimeOffset.UtcNow;
-                match.TotalNoOfTurns = moves.Count;
+                match.FinishedAt = DateTimeOffset.UtcNow.ToUniversalTime();
+                match.TotalNoOfMoves = moves.Count;
                 match.P1RatingChange = p1Delta;
                 match.P2RatingChange = p2Delta;
+                if (!string.IsNullOrWhiteSpace(finishReason))
+                    match.FinishReason = finishReason.Trim();
 
                 foreach (var m in moves)
                 {
@@ -129,7 +151,7 @@ namespace BattleGrid.Application.Services
                         MoveNumber = m.moveNumber,
                         HitX = m.hitX,
                         HitY = m.hitY,
-                        Result = m.hit
+                        IsHit = m.hit
                     });
                 }
 
@@ -139,27 +161,103 @@ namespace BattleGrid.Application.Services
                 await _context.SaveChangesAsync();
                 await tx.CommitAsync();
 
-                return new GeneralResponseDto { Success = true, Message = "Match finalized." };
+                return new PersistCompletedBattleResponseDto
+                {
+                    Success = true,
+                    Message = "Match finalized.",
+                    Player1RatingChange = p1Delta,
+                    Player2RatingChange = p2Delta
+                };
             }
             catch (Exception ex)
             {
                 await tx.RollbackAsync();
-                return new GeneralResponseDto { Success = false, Message = ex.Message };
+                return new PersistCompletedBattleResponseDto { Success = false, Message = ex.Message };
             }
         }
 
         public async Task<int?> GetResumableMatchIdAsync(int userId)
         {
-            var id = await _context.Match.AsNoTracking()
+            var id = await _context.Match
+                .AsNoTracking()
                 .Where(m => (m.Player1ID == userId || m.Player2ID == userId)
+                            // If the match status is in progress, placing ships, or loading, it is resumable
                             && (m.Status == MatchStatus.InProgress
                                 || m.Status == MatchStatus.PlacingShips
-                                || m.Status == MatchStatus.Loading))
+                                || m.Status == MatchStatus.Loading)
+                            // If the match has started in the last 60 minutes, it is resumable
+                            // Under normal circumtances it is impossible for a game to take more than 60 minutes to finish
+                            && m.StartedAt > DateTimeOffset.UtcNow.AddMinutes(-60))
                 .OrderByDescending(m => m.StartedAt)
                 .Select(m => (int?)m.MatchID)
                 .FirstOrDefaultAsync();
 
             return id;
+        }
+
+        public async Task<MatchRecoveryStateDto?> GetMatchRecoveryStateIfTerminalAsync(int matchId, int userId)
+        {
+            var row = await _context.Match
+                .AsNoTracking()
+                .Where(m => m.MatchID == matchId && (m.Player1ID == userId || m.Player2ID == userId))
+                .Select(m => new
+                {
+                    m.MatchID,
+                    m.Status,
+                    m.Player1ID,
+                    m.Player2ID,
+                    m.P1RatingChange,
+                    m.P2RatingChange,
+                    m.TotalNoOfMoves,
+                    m.FinishReason
+                })
+                .FirstOrDefaultAsync();
+
+            if (row is null)
+                return null;
+
+            if (row.Status == MatchStatus.InProgress
+                || row.Status == MatchStatus.PlacingShips
+                || row.Status == MatchStatus.Loading)
+                return null;
+
+            int? winner = row.Status switch
+            {
+                MatchStatus.P1Won => row.Player1ID,
+                MatchStatus.P2Won => row.Player2ID,
+                MatchStatus.Abandoned => null,
+                _ => null
+            };
+
+            var users = await _context.User.AsNoTracking()
+                .Where(u => u.UserID == row.Player1ID || u.UserID == row.Player2ID)
+                .Select(u => new { u.UserID, u.UserName })
+                .ToListAsync();
+
+            var p1Row = users.FirstOrDefault(u => u.UserID == row.Player1ID);
+            var p2Row = users.FirstOrDefault(u => u.UserID == row.Player2ID);
+
+            return new MatchRecoveryStateDto
+            {
+                MatchId = row.MatchID,
+                Status = (int)row.Status,
+                Player1Id = row.Player1ID,
+                Player2Id = row.Player2ID,
+                Player1UserName = FormatUserDisplayLabel(p1Row?.UserName ?? string.Empty, row.Player1ID),
+                Player2UserName = FormatUserDisplayLabel(p2Row?.UserName ?? string.Empty, row.Player2ID),
+                WinnerUserId = winner,
+                Player1RatingChange = row.P1RatingChange ?? 0,
+                Player2RatingChange = row.P2RatingChange ?? 0,
+                TotalNoOfMoves = row.TotalNoOfMoves,
+                FinishReason = row.FinishReason
+            };
+        }
+
+        private static string FormatUserDisplayLabel(string userName, int userId)
+        {
+            if (!string.IsNullOrWhiteSpace(userName))
+                return userName;
+            return $"user #{userId}";
         }
 
         public async Task<GeneralResponseDto> PersistAbandonedMatchAsync(int matchId, string finishReason)
@@ -172,10 +270,37 @@ namespace BattleGrid.Application.Services
                 return new GeneralResponseDto { Success = true, Message = "Match already closed." };
 
             row.Status = MatchStatus.Abandoned;
-            row.FinishedAt = DateTimeOffset.UtcNow;
-            row.FinishReason = finishReason;
+            row.FinishedAt = DateTimeOffset.UtcNow.ToUniversalTime();
+            row.FinishReason = string.IsNullOrWhiteSpace(finishReason) ? null : finishReason.Trim();
             await _context.SaveChangesAsync();
             return new GeneralResponseDto { Success = true, Message = "Match abandoned." };
+        }
+
+        /// <summary> Stored on <see cref="Match.FinishReason"/> when the cleanup worker abandons long-running non-terminal matches. </summary>
+        internal const string StaleMatchAutoAbandonFinishReason =
+            "Automatically abandoned: the match remained in Loading, PlacingShips, or InProgress past the stale-match time limit without a decisive outcome. "
+            + "Typical causes: both players disconnected, extended server outage, or an abandoned session.";
+
+        public async Task<int> AbandonStaleMatchesAsync(TimeSpan olderThan, CancellationToken cancellationToken = default)
+        {
+            var cutoff = DateTimeOffset.UtcNow.ToUniversalTime() - olderThan;
+            var activeStatuses = new[] { MatchStatus.Loading, MatchStatus.PlacingShips, MatchStatus.InProgress };
+
+            var matchIds = await _context.Match.AsNoTracking()
+                .Where(m => activeStatuses.Contains(m.Status) && m.StartedAt <= cutoff)
+                .Select(m => m.MatchID)
+                .ToListAsync(cancellationToken);
+
+            var abandonedCount = 0;
+            foreach (var matchId in matchIds)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var result = await PersistAbandonedMatchAsync(matchId, StaleMatchAutoAbandonFinishReason);
+                if (result is { Success: true, Message: "Match abandoned." })
+                    abandonedCount++;
+            }
+
+            return abandonedCount;
         }
 
         private async Task UpsertPlayerStatAsync(int userId, bool won, int ratingDelta)
@@ -184,34 +309,14 @@ namespace BattleGrid.Application.Services
             var season = state.GlobalCurrentSeason;
 
             var row = await _context.PlayerStat
-                .Where(x => x.UserID == userId && x.SeasonNo == season)
-                .OrderByDescending(x => x.StatID)
-                .FirstOrDefaultAsync();
-
-            if (row is null)
-            {
-                var rating = Math.Max(100, 1000 + ratingDelta);
-                _context.PlayerStat.Add(new PlayerStat
-                {
-                    UserID = userId,
-                    SeasonNo = season,
-                    MatchesPlayed = 1,
-                    MatchesWon = won ? 1 : 0,
-                    Rating = rating,
-                    HighestRating = Math.Max(1000, rating),
-                    CreatedAt = DateTimeOffset.UtcNow,
-                    LastUpdatedAt = DateTimeOffset.UtcNow
-                });
-                return;
-            }
+                .SingleAsync(x => x.UserID == userId && x.SeasonNo == season);
 
             row.MatchesPlayed++;
             if (won)
                 row.MatchesWon++;
-            row.Rating = Math.Max(100, row.Rating + ratingDelta);
-            if (row.Rating > row.HighestRating)
-                row.HighestRating = row.Rating;
-            row.LastUpdatedAt = DateTimeOffset.UtcNow;
+            row.Rating = PlayerRatingBounds.ClampRating(row.Rating + ratingDelta);
+            row.HighestRating = PlayerRatingBounds.ClampHighestAfterCurrent(row.HighestRating, row.Rating);
+            row.LastUpdatedAt = DateTimeOffset.UtcNow.ToUniversalTime();
         }
     }
 }

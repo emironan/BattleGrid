@@ -93,6 +93,8 @@ public sealed class InMemoryMatchGameService
         private readonly Dictionary<int, int> _afkTimeoutStreak = new();
 
         private bool _processingForcedShotExpiry;
+        /// <summary>After API restart, battle state was rebuilt from DB - broadcast once when a player reconnects.</summary>
+        private bool _pendingRestoredBattleBroadcast;
 
         public MatchRoom(int matchId, IServiceScopeFactory scopeFactory, IHubContext<GameHub> hubContext)
         {
@@ -117,7 +119,10 @@ public sealed class InMemoryMatchGameService
                     _disconnectGraceCts = null;
                 }
 
-                startTimer = !_placementBroadcastStarted && !_battleStarted && _userConnections.Count >= 2;
+                startTimer = !_matchFinished
+                    && !_placementBroadcastStarted
+                    && !_battleStarted
+                    && _userConnections.Count >= 2;
                 if (startTimer)
                 {
                     _placementBroadcastStarted = true;
@@ -129,6 +134,12 @@ public sealed class InMemoryMatchGameService
 
             if (startTimer && _placementDeadlineUtc is { } deadline)
             {
+                await using (var scope = _scopeFactory.CreateAsyncScope())
+                {
+                    var matchSvc = scope.ServiceProvider.GetRequiredService<IMatchServices>();
+                    await matchSvc.TrySetMatchStatusAsync(_matchId, MatchStatus.PlacingShips);
+                }
+
                 await _hubContext.Clients.Group(InMemoryMatchGameService.GroupName(_matchId)).SendAsync("PlacementPhaseStarted", new
                 {
                     deadlineUtc = deadline,
@@ -137,24 +148,37 @@ public sealed class InMemoryMatchGameService
                 });
             }
 
-            if (_battleStarted)
+            GameState? battleGame;
+            bool broadcastRestoredBattle;
+            lock (_gate)
             {
-                GameState? g;
-                lock (_gate)
-                {
-                    g = _game;
-                }
+                battleGame = _game;
+                broadcastRestoredBattle = _pendingRestoredBattleBroadcast;
+                _pendingRestoredBattleBroadcast = false;
+            }
 
-                if (g is not null)
+            if (broadcastRestoredBattle && battleGame is not null)
+            {
+                await _hubContext.Clients.Group(InMemoryMatchGameService.GroupName(_matchId)).SendAsync("BattleStarted", new
                 {
-                    await SendBattleSnapshotToClientAsync(g, userId, connectionId);
-                }
+                    player1Id = battleGame.Player1Id,
+                    player2Id = battleGame.Player2Id,
+                    currentTurnPlayerId = battleGame.CurrentTurnPlayerId,
+                    phase = battleGame.Phase.ToString()
+                });
+                StartShotClockLoop();
+                await FanoutBattleSnapshotsAsync(battleGame);
+            }
+            else if (_battleStarted && battleGame is not null)
+            {
+                await SendBattleSnapshotToClientAsync(battleGame, userId, connectionId);
             }
         }
 
         public void OnPlayerDisconnected(int userId)
         {
             bool startGrace = false;
+            var bothDisconnected = false;
             lock (_gate)
             {
                 _userConnections.Remove(userId);
@@ -162,6 +186,13 @@ public sealed class InMemoryMatchGameService
                     return;
                 if (!_placementBroadcastStarted && !_battleStarted)
                     return;
+
+                /* No SignalR clients left - abandon in DB with no winner (cannot run forfeits). */
+                if (_userConnections.Count == 0)
+                {
+                    bothDisconnected = true;
+                    return;
+                }
 
                 var opponentId = userId == _player1Id ? _player2Id : _player1Id;
                 if (_userConnections.ContainsKey(opponentId))
@@ -172,6 +203,12 @@ public sealed class InMemoryMatchGameService
                     _disconnectGraceCts?.Dispose();
                     _disconnectGraceCts = new CancellationTokenSource();
                 }
+            }
+
+            if (bothDisconnected)
+            {
+                _ = FinalizeMatchBothPlayersDisconnectedAsync();
+                return;
             }
 
             if (startGrace && _disconnectGraceCts is not null)
@@ -291,6 +328,14 @@ public sealed class InMemoryMatchGameService
                 {
                     try
                     {
+                        var db = scope.ServiceProvider.GetRequiredService<BattleGridDbContext>();
+                        var dbMatch = await db.Match.AsNoTracking()
+                            .FirstOrDefaultAsync(m => m.MatchID == _matchId);
+                        if (dbMatch is null)
+                            return;
+                        if (dbMatch.Status == MatchStatus.InProgress)
+                            return;
+
                         var placementsSvc = scope.ServiceProvider.GetRequiredService<IShipPlacementServices>();
                         var matchSvc = scope.ServiceProvider.GetRequiredService<IMatchServices>();
                         await placementsSvc.SavePlacementsBatchAsync(_matchId, rowsToSave);
@@ -556,7 +601,6 @@ public sealed class InMemoryMatchGameService
             await EnsureMatchAndFleetAsync();
 
             int? winnerId = null;
-            var placementPhase = false;
             lock (_gate)
             {
                 if (_matchFinished)
@@ -564,9 +608,10 @@ public sealed class InMemoryMatchGameService
                 if (forfeitingUserId != _player1Id && forfeitingUserId != _player2Id)
                     return;
 
+                /* Opponent wins whether the player leaves during placement or live battle. */
                 if (!_battleStarted)
                 {
-                    placementPhase = true;
+                    winnerId = forfeitingUserId == _player1Id ? _player2Id : _player1Id;
                 }
                 else if (_game?.Phase == GamePhase.InProgress)
                 {
@@ -578,52 +623,141 @@ public sealed class InMemoryMatchGameService
                 }
             }
 
-            if (placementPhase)
+            if (winnerId is not int w)
+                return;
+
+            await using var scope = _scopeFactory.CreateAsyncScope();
+            var matchSvc = scope.ServiceProvider.GetRequiredService<IMatchServices>();
+            var userSvc = scope.ServiceProvider.GetRequiredService<IUserServices>();
+
+            string finishReason;
+            if (string.Equals(reason, "AbandonShip", StringComparison.OrdinalIgnoreCase))
             {
-                await using var scope = _scopeFactory.CreateAsyncScope();
-                var matchSvc = scope.ServiceProvider.GetRequiredService<IMatchServices>();
-                await matchSvc.PersistAbandonedMatchAsync(_matchId, reason);
-                await BroadcastMatchAbandonedAsync(reason);
+                finishReason = await BuildAbandonShipFinishReasonAsync(userSvc, forfeitingUserId, w);
+            }
+            else if (reason.Contains("AFK", StringComparison.Ordinal))
+            {
+                finishReason = await BuildOpponentWinsAfterForfeitAsync(
+                    userSvc,
+                    forfeitingUserId,
+                    w,
+                    "forfeited due to AFK (three consecutive shot timeouts).");
+            }
+            else if (reason.Contains("Disconnected", StringComparison.OrdinalIgnoreCase))
+            {
+                finishReason = await BuildOpponentWinsAfterForfeitAsync(
+                    userSvc,
+                    forfeitingUserId,
+                    w,
+                    "forfeited after exceeding the disconnect grace period (2 minutes with no reconnect).");
+            }
+            else if (string.Equals(reason, "Forfeit", StringComparison.OrdinalIgnoreCase))
+            {
+                finishReason = await BuildOpponentWinsAfterForfeitAsync(
+                    userSvc,
+                    forfeitingUserId,
+                    w,
+                    "forfeited.");
+            }
+            else
+            {
+                finishReason = reason;
+            }
+
+            List<(int shooterId, int moveNumber, int x, int y, bool hit)> snapshot;
+            lock (_gate)
+            {
+                snapshot = _recordedMoves.ToList();
+            }
+
+            var resp = await matchSvc.PersistCompletedBattleAsync(_matchId, w, snapshot, finishReason);
+            if (!resp.Success)
+            {
+                await _hubContext.Clients.Group(InMemoryMatchGameService.GroupName(_matchId))
+                    .SendAsync("MatchPersistFailed", resp.Message ?? "Could not save forfeit.");
                 return;
             }
 
-            if (winnerId is int w)
+            lock (_gate)
             {
-                await using var scope = _scopeFactory.CreateAsyncScope();
-                var matchSvc = scope.ServiceProvider.GetRequiredService<IMatchServices>();
-                List<(int shooterId, int moveNumber, int x, int y, bool hit)> snapshot;
-                lock (_gate)
-                {
-                    snapshot = _recordedMoves.ToList();
-                }
-
-                var resp = await matchSvc.PersistCompletedBattleAsync(_matchId, w, snapshot);
-                if (!resp.Success)
-                {
-                    await _hubContext.Clients.Group(InMemoryMatchGameService.GroupName(_matchId))
-                        .SendAsync("MatchPersistFailed", resp.Message ?? "Could not save forfeit.");
-                    return;
-                }
-
-                lock (_gate)
-                {
-                    _matchPersisted = true;
-                    _matchFinished = true;
-                }
-
-                StopMatchInfrastructureLocked();
-
-                var msg = new MatchEndedMessage
-                {
-                    WinnerUserId = w,
-                    Player1RatingChange = w == _player1Id ? 15 : -15,
-                    Player2RatingChange = w == _player2Id ? 15 : -15,
-                    PostMatchDeadlineUtc = DateTimeOffset.UtcNow.AddSeconds(30),
-                    EndReason = reason
-                };
-
-                await _hubContext.Clients.Group(InMemoryMatchGameService.GroupName(_matchId)).SendAsync("MatchEnded", msg);
+                _matchPersisted = true;
+                _matchFinished = true;
             }
+
+            StopMatchInfrastructureLocked();
+
+            var (p1Display, p2Display) = await ResolvePlayerDisplayNamesAsync(userSvc, _player1Id, _player2Id);
+
+            var msg = new MatchEndedMessage
+            {
+                WinnerUserId = w,
+                Player1Id = _player1Id,
+                Player2Id = _player2Id,
+                Player1UserName = p1Display,
+                Player2UserName = p2Display,
+                Player1RatingChange = resp.Player1RatingChange,
+                Player2RatingChange = resp.Player2RatingChange,
+                PostMatchDeadlineUtc = DateTimeOffset.UtcNow.AddSeconds(30),
+                EndReason = finishReason
+            };
+
+            await _hubContext.Clients.Group(InMemoryMatchGameService.GroupName(_matchId)).SendAsync("MatchEnded", msg);
+        }
+
+        private static async Task<string> BuildAbandonShipFinishReasonAsync(
+            IUserServices users,
+            int forfeitingUserId,
+            int winnerUserId)
+        {
+            var forfeiter = await users.GetByIdAsync(forfeitingUserId);
+            var winner = await users.GetByIdAsync(winnerUserId);
+            //aaa var loserName = FormatUserDisplayName(forfeiter, forfeitingUserId);
+            //aaa var winnerName = FormatUserDisplayName(winner, winnerUserId);
+            return $"PlayerID {forfeitingUserId} abandoned ship. PlayerID {winnerUserId} won.";
+        }
+
+        private static async Task<string> BuildOpponentWinsAfterForfeitAsync(
+            IUserServices users,
+            int forfeitingUserId,
+            int winnerUserId,
+            string midSentence)
+        {
+            var forfeiter = await users.GetByIdAsync(forfeitingUserId);
+            var winner = await users.GetByIdAsync(winnerUserId);
+            //aaa var loserName = FormatUserDisplayName(forfeiter, forfeitingUserId);
+            //aaa var winnerName = FormatUserDisplayName(winner, winnerUserId);
+            return $"PlayerID {forfeitingUserId} {midSentence} PlayerID {winnerUserId} won.";
+        }
+
+        private static async Task<string> BuildStandardBattleVictoryReasonAsync(
+            IUserServices users,
+            int winnerUserId,
+            int loserUserId)
+        {
+            var w = await users.GetByIdAsync(winnerUserId);
+            var l = await users.GetByIdAsync(loserUserId);
+            //aaa var winnerName = FormatUserDisplayName(w, winnerUserId);
+            //aaa var loserName = FormatUserDisplayName(l, loserUserId);
+            return $"PlayerID {winnerUserId} won - all of PlayerID {loserUserId}'s ships were destroyed.";
+        }
+
+        private static async Task<(string Player1UserName, string Player2UserName)> ResolvePlayerDisplayNamesAsync(
+            IUserServices userSvc,
+            int player1Id,
+            int player2Id)
+        {
+            var u1 = await userSvc.GetByIdAsync(player1Id);
+            var u2 = await userSvc.GetByIdAsync(player2Id);
+            return (FormatUserDisplayName(u1, player1Id), FormatUserDisplayName(u2, player2Id));
+        }
+
+        private static string FormatUserDisplayName(UserResponseDto? user, int userId)
+        {
+            if (user is null)
+                return $"user #{userId}";
+            if (!string.IsNullOrWhiteSpace(user.UserName))
+                return user.UserName;
+            return $"user #{userId}";
         }
 
         private void StopMatchInfrastructureLocked()
@@ -638,17 +772,6 @@ public sealed class InMemoryMatchGameService
             _disconnectGraceCts?.Dispose();
             _disconnectGraceCts = null;
             _disconnectGraceUserId = null;
-        }
-
-        private async Task BroadcastMatchAbandonedAsync(string reason)
-        {
-            lock (_gate)
-            {
-                _matchFinished = true;
-                StopMatchInfrastructureLocked();
-            }
-
-            await _hubContext.Clients.Group(InMemoryMatchGameService.GroupName(_matchId)).SendAsync("MatchAbandoned", new { reason });
         }
 
         private async Task FanoutFleetLayoutsAsync(IReadOnlyList<ShipType> fleet)
@@ -717,7 +840,14 @@ public sealed class InMemoryMatchGameService
                 incoming = new List<object>();
                 foreach (var m in _recordedMoves)
                 {
-                    var intel = new { x = m.x, y = m.y, result = m.hit ? "Hit" : "Miss" };
+                    var intel = new
+                    {
+                        x = m.x,
+                        y = m.y,
+                        result = m.shooterId == userId
+                            ? IntelResultForOutgoing(game, userId, m.x, m.y, m.hit)
+                            : IntelResultForIncoming(game, userId, m.x, m.y, m.hit)
+                    };
                     if (m.shooterId == userId)
                         outgoing.Add(intel);
                     else
@@ -882,12 +1012,21 @@ public sealed class InMemoryMatchGameService
             lock (_gate)
                 shotClockDeadlineUtc = _shotClockDeadlineUtc;
 
+            string clientResult;
+            lock (_gate)
+            {
+                var g = _game;
+                clientResult = g is null
+                    ? result.ToString()
+                    : ToClientShotResult(result, g, userId, targetX, targetY);
+            }
+
             await _hubContext.Clients.Group(InMemoryMatchGameService.GroupName(_matchId)).SendAsync("ShotFired", new
             {
                 shooterId = userId,
                 x = targetX,
                 y = targetY,
-                result = result.ToString(),
+                result = clientResult,
                 currentTurnPlayerId = broadcastTurn,
                 phase = broadcastPhase,
                 forcedTimeout,
@@ -904,7 +1043,7 @@ public sealed class InMemoryMatchGameService
 
                 if (streak >= 3)
                 {
-                    await ForfeitAsync(userId, "AFK — three shot timeouts.");
+                    await ForfeitAsync(userId, "AFK - three shot timeouts.");
                     return result;
                 }
             }
@@ -966,6 +1105,67 @@ public sealed class InMemoryMatchGameService
 
             _fleet = await db.ShipType.AsNoTracking().OrderBy(s => s.ShipID).ToListAsync();
             _shipsPerPlayer = _fleet.Sum(s => s.MaxPerPlayer);
+
+            await TryRestoreBattleFromDatabaseAsync(db, match);
+        }
+
+        /// <summary>
+        /// After an API restart, only <see cref="MatchStatus.InProgress"/> matches are resumed from DB.
+        /// <see cref="MatchStatus.Loading"/> / <see cref="MatchStatus.PlacingShips"/> use the normal placement flow (no rows yet).
+        /// </summary>
+        private async Task TryRestoreBattleFromDatabaseAsync(BattleGridDbContext db, Match matchRow)
+        {
+            if (_fleet is null || matchRow.Status != MatchStatus.InProgress)
+                return;
+
+            var placements = await db.ShipPlacement.AsNoTracking()
+                .Where(p => p.MatchID == _matchId)
+                .ToListAsync();
+
+            if (placements.Count == 0)
+                return;
+
+            var requiredPerPlayer = _shipsPerPlayer;
+            var p1Rows = placements.Where(p => p.PlayerID == _player1Id).ToList();
+            var p2Rows = placements.Where(p => p.PlayerID == _player2Id).ToList();
+            if (p1Rows.Count < requiredPerPlayer || p2Rows.Count < requiredPerPlayer)
+                return;
+
+            var p1Dtos = p1Rows.Select(r => new PlacedShipDto
+            {
+                ShipID = r.ShipID,
+                StartX = r.StartX,
+                StartY = r.StartY,
+                IsVertical = r.IsVertical
+            }).ToList();
+            var p2Dtos = p2Rows.Select(r => new PlacedShipDto
+            {
+                ShipID = r.ShipID,
+                StartX = r.StartX,
+                StartY = r.StartY,
+                IsVertical = r.IsVertical
+            }).ToList();
+
+            var fleetCopy = _fleet.ToList();
+            GameState restoredGame;
+            lock (_gate)
+            {
+                if (_battleStarted)
+                    return;
+
+                restoredGame = new GameState(_player1Id, _player2Id, _shipsPerPlayer);
+                ApplyPlacementsToGameState(restoredGame, _player1Id, p1Dtos, fleetCopy);
+                ApplyPlacementsToGameState(restoredGame, _player2Id, p2Dtos, fleetCopy);
+
+                _game = restoredGame;
+                _battleStarted = true;
+                _placementBroadcastStarted = true;
+                _p1FinalPlacements.Clear();
+                _p1FinalPlacements.AddRange(p1Dtos);
+                _p2FinalPlacements.Clear();
+                _p2FinalPlacements.AddRange(p2Dtos);
+                _pendingRestoredBattleBroadcast = true;
+            }
         }
 
         public async Task<ShotResult?> FireShotAsync(int userId, int targetX, int targetY, string callerConnectionId)
@@ -985,6 +1185,43 @@ public sealed class InMemoryMatchGameService
             return await ApplyShotAndBroadcastAsync(userId, targetX, targetY, forcedTimeout: false, callerConnectionId);
         }
 
+        private async Task FinalizeMatchBothPlayersDisconnectedAsync()
+        {
+            lock (_gate)
+            {
+                if (_matchFinished)
+                    return;
+            }
+
+            _disconnectGraceCts?.Cancel();
+            _disconnectGraceCts?.Dispose();
+            _disconnectGraceCts = null;
+            _disconnectGraceUserId = null;
+
+            try
+            {
+                await EnsureMatchAndFleetAsync();
+                await using var scope = _scopeFactory.CreateAsyncScope();
+                var matchSvc = scope.ServiceProvider.GetRequiredService<IMatchServices>();
+                const string reason =
+                    "Match abandoned - both players disconnected simultaneously; no winner determined.";
+                var resp = await matchSvc.PersistAbandonedMatchAsync(_matchId, reason);
+                if (!resp.Success)
+                    return;
+
+                lock (_gate)
+                {
+                    _matchFinished = true;
+                }
+
+                StopMatchInfrastructureLocked();
+            }
+            catch
+            {
+                // Clients are already offline; persistence is best-effort only here.
+            }
+        }
+
         private async Task FinalizeMatchAfterWinAsync(int winnerUserId)
         {
             List<(int shooterId, int moveNumber, int x, int y, bool hit)> snapshot;
@@ -999,7 +1236,10 @@ public sealed class InMemoryMatchGameService
             {
                 await using var scope = _scopeFactory.CreateAsyncScope();
                 var matchSvc = scope.ServiceProvider.GetRequiredService<IMatchServices>();
-                var resp = await matchSvc.PersistCompletedBattleAsync(_matchId, winnerUserId, snapshot);
+                var userSvc = scope.ServiceProvider.GetRequiredService<IUserServices>();
+                var loserUserId = winnerUserId == _player1Id ? _player2Id : _player1Id;
+                var finishReason = await BuildStandardBattleVictoryReasonAsync(userSvc, winnerUserId, loserUserId);
+                var resp = await matchSvc.PersistCompletedBattleAsync(_matchId, winnerUserId, snapshot, finishReason);
                 if (!resp.Success)
                 {
                     await _hubContext.Clients.Group(InMemoryMatchGameService.GroupName(_matchId))
@@ -1015,13 +1255,19 @@ public sealed class InMemoryMatchGameService
 
                 StopMatchInfrastructureLocked();
 
+                var (p1Display, p2Display) = await ResolvePlayerDisplayNamesAsync(userSvc, _player1Id, _player2Id);
+
                 var msg = new MatchEndedMessage
                 {
                     WinnerUserId = winnerUserId,
-                    Player1RatingChange = winnerUserId == _player1Id ? 15 : -15,
-                    Player2RatingChange = winnerUserId == _player2Id ? 15 : -15,
+                    Player1Id = _player1Id,
+                    Player2Id = _player2Id,
+                    Player1UserName = p1Display,
+                    Player2UserName = p2Display,
+                    Player1RatingChange = resp.Player1RatingChange,
+                    Player2RatingChange = resp.Player2RatingChange,
                     PostMatchDeadlineUtc = DateTimeOffset.UtcNow.AddSeconds(30),
-                    EndReason = null
+                    EndReason = finishReason
                 };
 
                 await _hubContext.Clients.Group(InMemoryMatchGameService.GroupName(_matchId)).SendAsync("MatchEnded", msg);
@@ -1031,6 +1277,41 @@ public sealed class InMemoryMatchGameService
                 await _hubContext.Clients.Group(InMemoryMatchGameService.GroupName(_matchId))
                     .SendAsync("MatchPersistFailed", ex.Message);
             }
+        }
+
+        /// <summary>
+        /// Maps domain <see cref="ShotResult.Hit"/> to client <c>Sunk</c> when <see cref="Board.IsShipSunk"/> ran on that salvo.
+        /// </summary>
+        static string ToClientShotResult(ShotResult result, GameState game, int shooterId, int x, int y)
+        {
+            if (result == ShotResult.Miss)
+                return "Miss";
+            if (result == ShotResult.Win)
+                return "Win";
+
+            var opponentId = shooterId == game.Player1Id ? game.Player2Id : game.Player1Id;
+            var opponentBoard = game.GetPlayerBoard(opponentId);
+            if (result == ShotResult.Hit && opponentBoard.GetCellState(x, y) == CellState.Sunk)
+                return "Sunk";
+
+            return result.ToString();
+        }
+
+        static string IntelResultForOutgoing(GameState game, int viewerUserId, int x, int y, bool hit)
+        {
+            if (!hit)
+                return "Miss";
+
+            var opponentId = viewerUserId == game.Player1Id ? game.Player2Id : game.Player1Id;
+            return game.GetPlayerBoard(opponentId).GetCellState(x, y) == CellState.Sunk ? "Sunk" : "Hit";
+        }
+
+        static string IntelResultForIncoming(GameState game, int defenderUserId, int x, int y, bool hit)
+        {
+            if (!hit)
+                return "Miss";
+
+            return game.GetPlayerBoard(defenderUserId).GetCellState(x, y) == CellState.Sunk ? "Sunk" : "Hit";
         }
     }
 }

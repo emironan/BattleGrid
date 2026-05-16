@@ -31,6 +31,8 @@ public class Board
         _shipHealth[shipId] = length;
     }
 
+    public CellState GetCellState(int x, int y) => _grid[x, y];
+
     public ShotResult FireShot(Coordinate coord)
     {
         var state = _grid[coord.X, coord.Y];
@@ -104,7 +106,8 @@ public class Board
     /// <summary> Untargeted open water only (guaranteed miss if fired).
     /// This will be used to randomly select an empty coordinate to fire at
     ///  in case the player does not shoot in time.
-    /// Player is AFK or griefing. </summary>
+    /// Player is AFK or griefing. 
+    /// </summary>
     public bool TryGetRandomUntargetedOpenWater(Random rnd, out Coordinate coord)
     {
         coord = default;

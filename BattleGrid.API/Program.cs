@@ -8,7 +8,9 @@ using BattleGrid.Application.Interfaces;
 using BattleGrid.Application.Services;
 using BattleGrid.Application.Helpers;
 using BattleGrid.Infrastructure.Data;
+using BattleGrid.Domain;
 using BattleGrid.Domain.Entities;
+using BattleGrid.API.BackgroundServices;
 using BattleGrid.API.Hubs;
 using BattleGrid.API.Matchmaking;
 using BattleGrid.API.Services;
@@ -66,6 +68,13 @@ builder.Services
                     (path.StartsWithSegments("/queue") || path.StartsWithSegments("/game")))
                 {
                     context.Token = accessToken;
+                    return Task.CompletedTask;
+                }
+
+                if (string.IsNullOrEmpty(context.Token) &&
+                    context.Request.Cookies.TryGetValue("AccessToken", out var cookieToken))
+                {
+                    context.Token = cookieToken;
                 }
 
                 return Task.CompletedTask;
@@ -78,6 +87,8 @@ builder.Services.AddAuthorization();
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<MatchmakingCoordinator>();
 builder.Services.AddHostedService<MatchmakingBackgroundService>();
+builder.Services.AddHostedService<StaleMatchCleanupBackgroundService>();
+builder.Services.AddHostedService<ExpiredBanCleanupBackgroundService>();
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
@@ -115,19 +126,18 @@ builder.Services.AddScoped<IJwtHelper, JwtHelper>();
 builder.Services.AddScoped<INormalizationHelper, NormalizationHelper>();
 
 //aaa TODO: Un-comment them as we implement them. Some might be unnecessary and be deleted if not implemented at all
-builder.Services.AddScoped<IAuthServices, AuthServices>(); // Some but not all Session AND User table related services such as; register, login, logout, and verify password
-builder.Services.AddScoped<IAdminServices, AdminServices>(); // Admin related services such as; banning players, and resetting leaderboards
-builder.Services.AddScoped<IUserServices, UserServices>(); // Rest of the User table related services. Also, include PlayerStat table related services here
-//aaa builder.Services.AddScoped<ISessionServices, SessionServices>(); // Rest of the Session table related services. Mostly, HTTP GET methods
+builder.Services.AddScoped<IAuthServices, AuthServices>();              // Some but not all Session AND User table related services such as; register, login, logout, and verify password
+builder.Services.AddScoped<IAdminServices, AdminServices>();            // Admin related services such as; banning players, and resetting leaderboards
+builder.Services.AddScoped<IUserServices, UserServices>();              // Rest of the User table related services. Also, include PlayerStat table related services here
+//aaa builder.Services.AddScoped<ISessionServices, SessionServices>();  // Rest of the Session table related services. Mostly, HTTP GET methods
 builder.Services.AddScoped<IShipTypeServices, ShipTypeServices>();
 builder.Services.AddScoped<IPlayerStatSeasonService, PlayerStatSeasonService>();
+builder.Services.Configure<RatingFormulaSettings>(builder.Configuration.GetSection(RatingFormulaSettings.SectionName));
 builder.Services.AddScoped<IMatchServices, MatchServices>();
 builder.Services.AddScoped<IShipPlacementServices, ShipPlacementServices>();
 builder.Services.AddSingleton<InMemoryMatchGameService>();
-//aaa builder.Services.AddScoped<IReplayServices, ReplayServices>(); // Spectator table related services AND for normal users to replay their own matches
-//aaa builder.Services.AddScoped<IMatchMakingServices, MatchmakingServices>(); // If we can handle this in-memory with SignalR, we may get rid of MatchmakingQueue table and this service
-//aaa builder.Services.AddScoped<IMatchMoveServices, MatchMoveServices>();
-//aaa builder.Services.AddScoped<IBanListServices, BanListServices>(); // Rest of the BanList table related services. Mostly HTTP GET methods for checking if a player is banned, when their ban is going to be lifted, or if it is permanent etc
+builder.Services.AddScoped<IReplayServices, ReplayServices>();
+builder.Services.AddScoped<IBanListServices, BanListServices>();
 
 var app = builder.Build();
 
@@ -145,9 +155,11 @@ app.UseAuthorization();
 
 app.MapControllers();
 
+// Hub URLs for queue and game
 app.MapHub<QueueHub>("/queue");
 app.MapHub<GameHub>("/game/{matchId:int}");
 
+// Standart response from API base URL. Will be used to detect API status in frontend
 app.MapGet("/", () => "BattleGrid API is running.");
 
 app.Run();

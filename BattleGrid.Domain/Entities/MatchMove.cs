@@ -8,6 +8,6 @@ public sealed class MatchMove
     public int MoveNumber { get; set; }
     public int HitX { get; set; }
     public int HitY { get; set; }
-    public bool Result { get; set; }
-    public DateTimeOffset TimeOfMove { get; set; } = DateTimeOffset.UtcNow;
+    public bool IsHit { get; set; }
+    public DateTimeOffset TimeOfMove { get; set; } = DateTimeOffset.UtcNow.ToUniversalTime();
 }

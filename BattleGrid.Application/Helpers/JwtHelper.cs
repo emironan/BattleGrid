@@ -52,8 +52,7 @@ namespace BattleGrid.Application.Helpers
             var claims = new[]
             {
                 new Claim("userId", user.UserID.ToString()),
-                // This can be null an cause problems. We should implement that random and unique UserNameGenerator
-                //new Claim("user name", user.UserName.ToString()),
+                new Claim("userName", user.UserName),
                 new Claim(JwtRegisteredClaimNames.Email, user.Email),
                 new Claim("user role", role),
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())

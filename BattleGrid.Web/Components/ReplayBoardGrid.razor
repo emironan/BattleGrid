@@ -1,0 +1,67 @@
+@using BattleGrid.Contracts.ResponseDtos
+
+<div class="battle-grid-frame battle-grid-frame--fit battle-grid-frame--frozen">
+    <div class="battle-grid">
+        @for (var visualRow = 0; visualRow < Board.GridSize; visualRow++)
+        {
+            var cy = GridCoordinates.YFromVisualRowFromTop(visualRow);
+            <div class="battle-row battle-row-cols">
+                <div class="battle-axis">@GridCoordinates.DisplayRowNumberFromY(cy)</div>
+                @for (var x = 0; x < Board.GridSize; x++)
+                {
+                    <div class="@GetCellClass(x, cy)"
+                         title="@($"{GridCoordinates.ColumnIndexToLetter(x)}{GridCoordinates.DisplayRowNumberFromY(cy)}")">
+                    </div>
+                }
+            </div>
+        }
+        <div class="battle-row battle-row-footer battle-row-cols">
+            <div class="battle-corner"></div>
+            @for (var x = 0; x < Board.GridSize; x++)
+            {
+                <div class="battle-axis battle-axis--col">@GridCoordinates.ColumnIndexToLetter(x)</div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public int BoardOwnerId { get; set; }
+    [Parameter, EditorRequired] public MatchReplayResponseDto Replay { get; set; } = null!;
+    [Parameter] public int RevealedMoveCount { get; set; }
+    [Parameter] public IReadOnlyDictionary<(int X, int Y), int> Ships { get; set; } = new Dictionary<(int X, int Y), int>();
+
+    string GetCellClass(int x, int y)
+    {
+        var shot = GetShotOnBoard(x, y);
+        if (shot == "Miss")
+            return "battle-cell battle-cell--incoming-miss";
+        if (shot == "Hit")
+            return "battle-cell battle-cell--incoming-hit";
+
+        if (Ships.ContainsKey((x, y)))
+            return $"battle-cell battle-cell--placed ship-tone-{Math.Abs(Ships[(x, y)]) % 5}";
+
+        return "battle-cell battle-cell-water";
+    }
+
+    string? GetShotOnBoard(int x, int y)
+    {
+        if (RevealedMoveCount == 0)
+            return null;
+
+        string? last = null;
+        foreach (var move in Replay.Moves.Take(RevealedMoveCount))
+        {
+            var targetId = move.ShooterPlayerId == Replay.Player1Id
+                ? Replay.Player2Id
+                : Replay.Player1Id;
+            if (targetId != BoardOwnerId)
+                continue;
+            if (move.HitX == x && move.HitY == y)
+                last = move.IsHit ? "Hit" : "Miss";
+        }
+
+        return last;
+    }
+}

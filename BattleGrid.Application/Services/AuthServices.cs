@@ -5,31 +5,65 @@ using BattleGrid.Contracts.ResponseDtos;
 using BattleGrid.Domain.Entities;
 using BattleGrid.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
+using System.Text.RegularExpressions;
 
 
 namespace BattleGrid.Application.Services
 {
-
     public class AuthServices : IAuthServices
     {
         private readonly BattleGridDbContext _context;
         private readonly IUserServices _userServices;
         private readonly IJwtHelper _jwtHelper;
         private readonly INormalizationHelper _normalizationHelper;
+        private readonly IPlayerStatSeasonService _playerStatSeason;
+        private readonly IBanListServices _banListServices;
 
         public AuthServices(BattleGridDbContext context, 
                             IUserServices userServices,
                             IJwtHelper jwtHelper,
-                            INormalizationHelper normalizationHelper)
+                            INormalizationHelper normalizationHelper,
+                            IPlayerStatSeasonService playerStatSeason,
+                            IBanListServices banListServices)
         {
             _context = context;
             _userServices = userServices;
             _jwtHelper = jwtHelper;
             _normalizationHelper = normalizationHelper;
+            _playerStatSeason = playerStatSeason;
+            _banListServices = banListServices;
         }
 
         public async Task<GeneralResponseDto> RegisterAsync(RegisterRequestDto dto)
         {
+            if (string.IsNullOrWhiteSpace(dto.UserName))
+            {
+                return new GeneralResponseDto
+                {
+                    Success = false,
+                    Message = "User name is required."
+                };
+            }
+
+            dto.UserName = await _normalizationHelper.NormalizeLoginInfoAsync(dto.UserName);
+            if (dto.UserName.Contains('@', StringComparison.Ordinal))
+            {
+                return new GeneralResponseDto
+                {
+                    Success = false,
+                    Message = "User name cannot contain '@' (use the email field for email)."
+                };
+            }
+
+            if (!Regex.IsMatch(dto.UserName, @"^[A-Za-z0-9_]+$", RegexOptions.CultureInvariant))
+            {
+                return new GeneralResponseDto
+                {
+                    Success = false,
+                    Message = "User name may only contain letters, numbers, and underscores."
+                };
+            }
+
             // Check if a user with the same email already exists
             // Make sure email is in a proper format (trimmed and lowercase) before checking for existing users
             dto.Email = await _normalizationHelper.NormalizeLoginInfoAsync(dto.Email);
@@ -51,63 +85,53 @@ namespace BattleGrid.Application.Services
                 };
             }
 
-            // Check if the DTO's UserName field is not null and if the provided UserName already exists
-            if (dto.UserName != null)
+            var userNameExists = await _context.User
+                .AsNoTracking()
+                .AnyAsync(x => x.UserName == dto.UserName);
+
+            if (userNameExists)
             {
-                dto.UserName = await _normalizationHelper.NormalizeLoginInfoAsync(dto.UserName);
-
-                var userNameExists = await _context.User
-                    .AsNoTracking()
-                    .AnyAsync(x => x.UserName == dto.UserName);
-
-                if (userNameExists)
+                return new GeneralResponseDto
                 {
-                    return new GeneralResponseDto
-                    {
-                        Success = false,
-                        Message = "This user name is taken."
-                    };
-                }
+                    Success = false,
+                    Message = "This user name is taken."
+                };
             }
-
-            // A random and unique username generator might be helpful in the future
-            /* If the UserName field is empty, generate unique UserName "U" followed by a unique number
-            if (string.IsNullOrEmpty(dto.UserName)
-               { 
-                    var userName = await UserNameHelper.GenerateUserNameAsync(_uniqueNumberChecker);
-                    if (string.IsNullOrEmpty(userName))
-                        {
-                            return false;
-                        }
-               }
-            */
 
             // Create new user
             var newUser = new User
             {
-                UserName = dto.UserName,                                        // Save the properly formatted username (if it is not null)
+                UserName = dto.UserName,
                 Email = dto.Email,                                              // Save the properly formatted email
                 PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password)     // and the hashed password
                 // The rest takes the default values
             };
 
-            var result = await _context.User.AddAsync(newUser);
-            await _context.SaveChangesAsync();
-
-            if (result == null)
+            await using var tx = await _context.Database.BeginTransactionAsync();
+            try
             {
+                await _context.User.AddAsync(newUser);
+                await _context.SaveChangesAsync();
+
+                await _playerStatSeason.EnsureMatchmakingRatingAsync(newUser.UserID);
+
+                await tx.CommitAsync();
+
+                return new GeneralResponseDto
+                {
+                    Success = true,
+                    Message = "User registered succesfully."
+                };
+            }
+            catch (Exception)
+            {
+                await tx.RollbackAsync();
                 return new GeneralResponseDto
                 {
                     Success = false,
                     Message = "An error occured while saving user data!"
                 };
             }
-
-            return new GeneralResponseDto
-            {
-                Success = true,
-                Message = "User registered succesfully."
-            };
         }
 
         public async Task<LoginResponseDto> LoginAsync(LoginRequestDto dto)
@@ -136,75 +160,33 @@ namespace BattleGrid.Application.Services
                 };
             }
 
-            // Banned users can not even login!
             if (user.IsBanned)
             {
-                // Get the latest ban record for the user
-                var ban = await _context.BanList
-                    .Where(b => b.PlayerID == user.UserID)
-                    .OrderByDescending(b => b.BanID)
-                    .FirstOrDefaultAsync();
+                await _banListServices.RefreshPlayerBanStateAsync(user.UserID);
+                user = await _userServices.GetByLoginInfoAsync(dto.LoginInfo);
+                if (user is null)
+                    throw new InvalidOperationException("User does not exist");
 
-                /* If there is no ban record or the ban is reverted, the user is not actually banned!
-                 * However, it is marked as IsBanned = true in the User table!
-                 * We need to call the service that checks and updates ban status among User and BanList tables
-                 */
-                if (ban == null || ban.IsReverted)
+                if (user.IsBanned)
                 {
-                    throw new ArgumentNullException("User table shows user as banned. However, the possibilities are as follows: " +
-                        "1) Ban's duration has ended," +
-                        "2)Ban is reverted," +
-                        "3)There is no ban records for this player");
+                    var ban = await _context.BanList
+                        .AsNoTracking()
+                        .Where(b => b.PlayerID == user.UserID)
+                        .OrderByDescending(b => b.BanID)
+                        .FirstOrDefaultAsync();
+
+                    var detail = FormatBanMessageDetail(ban);
+
+                    return new LoginResponseDto
+                    {
+                        Success = false,
+                        Message = $"You are banned {detail}",
+                        AccessToken = string.Empty,
+                        RefreshToken = string.Empty,
+                        ATExpiresAt = DateTimeOffset.MinValue,
+                        RTExpiresAt = DateTimeOffset.MinValue
+                    };
                 }
-
-                //aaa TODO: We need a BanListServices to implement a service that synchronizes ban status among User and BanList tables
-                /* If a ban is reverted or there is no ban record but the user table still shows as banned there is a problem!
-                 * For now, above if-check throws an exception for us to check the situation
-                 * 
-                 * if (ban == null || ban.IsReverted)
-                 * {
-                 *      // Update user table with IsBanned = false
-                 *      // break out of this part and continue with login
-                 * }
-                 */
-
-                string detail = "";
-
-                if (!ban.IsTemporary)
-                {
-                    detail = "INDEFINITELY!";
-                }
-                else if (ban.BannedUntil != null)
-                {
-                    //aaa var banStatus = await _banServices.CheckBanStatusAsync(userId);
-                    /* if (ban.BannedUntill < UTCNow.ToUniversalTime)
-                     * {
-                     *     // Marks the BanList entry as IsRevoked = true if its duration has already passed
-                     *     await _banServices.UpdateBanStatusAsync(banId, userId);
-                     * }
-                     */
-
-                    // YYYY.MM.DD HH:MM:SS => 19 chars total. In C# it is .Substribg(startingIndex, length)
-                    string endDate = ban.BannedUntil.Value.ToString().Trim().Substring(0, 19);
-                    detail = $"until {endDate} UTC";
-                }
-                else
-                {
-                    DateTimeOffset bannedAt = ban.BannedAt;
-                    TimeSpan banDuration = (ban.Duration != null) ? ban.Duration.Value : TimeSpan.FromDays(36500);
-                    DateTimeOffset endDate = bannedAt.Add(banDuration);
-                    detail = endDate.ToString().Trim().Substring(0, 19);
-                }
-
-                return new LoginResponseDto
-                {
-                    Success = false,
-                    Message = $"You are banned {detail}",
-                    AccessToken = string.Empty,
-                    RefreshToken = string.Empty,
-                    ATExpiresAt = DateTimeOffset.MinValue,
-                    RTExpiresAt = DateTimeOffset.MinValue
-                };
             }
 
             // User is not banned and account is active
@@ -236,26 +218,56 @@ namespace BattleGrid.Application.Services
             user.Email = await _normalizationHelper.NormalizeLoginInfoAsync(user.Email);
 
             string accessToken = await _jwtHelper.GenerateAccessTokenAsync(user.Email);
-            string refreshToken = await _jwtHelper.GenerateRefreshTokenAsync();
-
-            if (string.IsNullOrEmpty(accessToken) || string.IsNullOrEmpty(refreshToken))
+            if (string.IsNullOrEmpty(accessToken))
             {
-                throw new ArgumentNullException("Access token or refresh token is empty");
+                throw new ArgumentNullException(nameof(accessToken), "Access token is empty");
             }
 
             DateTimeOffset accessTokenExpiration = _jwtHelper.GetAccessTokenExpiration();
-            DateTimeOffset refreshTokenExpiration = _jwtHelper.GetRefreshTokenExpiration();
+            var now = DateTimeOffset.UtcNow.ToUniversalTime();
+
+            string refreshToken;
+            DateTimeOffset refreshTokenExpiration;
+
+            /* Lost browser cookies but DB may still hold a valid, non-revoked refresh - reuse it
+             * instead of minting a new one (standard practice to avoid churn and orphan refresh rows).
+             */
+            bool reuseExistingRefresh = existingSession is not null
+                && !existingSession.IsRevoked
+                && existingSession.RT_ExpiresAt > now;
+
+            if (reuseExistingRefresh)
+            {
+                refreshToken = existingSession!.RefreshToken;
+                refreshTokenExpiration = existingSession.RT_ExpiresAt;
+            }
+            else
+            {
+                refreshToken = await _jwtHelper.GenerateRefreshTokenAsync();
+                if (string.IsNullOrEmpty(refreshToken))
+                {
+                    throw new ArgumentNullException(nameof(refreshToken), "Refresh token is empty");
+                }
+
+                refreshTokenExpiration = _jwtHelper.GetRefreshTokenExpiration();
+            }
 
             /* If there is currently a session for this user, do not create a new one.
-             * Update the existing one with new tokens, expiration dates, and LastLogin info
+             * Update the existing one with new access token; refresh only if DB row cannot be reused.
              * ** LastLogin info is updated by the DB itself
              */
             if (existingSession != null)
             {
                 existingSession.AccessToken = accessToken;
                 existingSession.AT_ExpiresAt = accessTokenExpiration;
-                existingSession.RefreshToken = refreshToken;
-                existingSession.RT_ExpiresAt = refreshTokenExpiration;
+                if (!reuseExistingRefresh)
+                {
+                    existingSession.RefreshToken = refreshToken;
+                    existingSession.RT_ExpiresAt = refreshTokenExpiration;
+                }
+
+                existingSession.IsRevoked = false;
+                existingSession.LastUpdatedAt = now;
 
                 await _context.SaveChangesAsync();
 
@@ -294,6 +306,131 @@ namespace BattleGrid.Application.Services
                 RefreshToken = refreshToken,
                 ATExpiresAt = accessTokenExpiration,
                 RTExpiresAt = refreshTokenExpiration
+            };
+        }
+
+        public async Task<GeneralResponseDto> LogoutAsync(string refreshToken)
+        {
+            if (string.IsNullOrWhiteSpace(refreshToken))
+            {
+                return new GeneralResponseDto
+                {
+                    Success = false,
+                    Message = "Refresh token is required."
+                };
+            }
+
+            var session = await _context.Session
+                .FirstOrDefaultAsync(s => s.RefreshToken == refreshToken);
+
+            if (session is null)
+            {
+                return new GeneralResponseDto
+                {
+                    Success = true,
+                    Message = "Logged out."
+                };
+            }
+
+            session.IsRevoked = true;
+            session.LastUpdatedAt = DateTimeOffset.UtcNow.ToUniversalTime();
+            await _context.SaveChangesAsync();
+
+            return new GeneralResponseDto
+            {
+                Success = true,
+                Message = "Logged out."
+            };
+        }
+
+        public async Task<LoginResponseDto> RefreshAccessTokenAsync(string refreshToken)
+        {
+            if (string.IsNullOrWhiteSpace(refreshToken))
+            {
+                return new LoginResponseDto
+                {
+                    Success = false,
+                    Message = "Refresh token is required."
+                };
+            }
+
+            var now = DateTimeOffset.UtcNow.ToUniversalTime();
+            var session = await _context.Session
+                .FirstOrDefaultAsync(s => s.RefreshToken == refreshToken);
+
+            if (session is null)
+            {
+                return new LoginResponseDto
+                {
+                    Success = false,
+                    Message = "Invalid refresh token."
+                };
+            }
+
+            if (session.IsRevoked)
+            {
+                return new LoginResponseDto
+                {
+                    Success = false,
+                    Message = "Session has been revoked."
+                };
+            }
+
+            if (session.RT_ExpiresAt <= now)
+            {
+                return new LoginResponseDto
+                {
+                    Success = false,
+                    Message = "Refresh token has expired."
+                };
+            }
+
+            var user = await _context.User
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.UserID == session.UserID);
+
+            if (user is null || !user.IsActive)
+            {
+                return new LoginResponseDto
+                {
+                    Success = false,
+                    Message = "Account is not available."
+                };
+            }
+
+            if (user.IsBanned)
+            {
+                if (!await _banListServices.RefreshPlayerBanStateAsync(user.UserID))
+                {
+                    return new LoginResponseDto
+                    {
+                        Success = false,
+                        Message = "Account is banned."
+                    };
+                }
+
+                user = await _context.User
+                    .AsNoTracking()
+                    .FirstAsync(u => u.UserID == session.UserID);
+            }
+
+            var email = await _normalizationHelper.NormalizeLoginInfoAsync(user.Email);
+            var accessToken = await _jwtHelper.GenerateAccessTokenAsync(email);
+            var accessTokenExpiration = _jwtHelper.GetAccessTokenExpiration();
+
+            session.AccessToken = accessToken;
+            session.AT_ExpiresAt = accessTokenExpiration;
+            session.LastUpdatedAt = now;
+            await _context.SaveChangesAsync();
+
+            return new LoginResponseDto
+            {
+                Success = true,
+                Message = "Access token refreshed.",
+                AccessToken = accessToken,
+                RefreshToken = session.RefreshToken,
+                ATExpiresAt = accessTokenExpiration,
+                RTExpiresAt = session.RT_ExpiresAt
             };
         }
 
@@ -422,6 +559,21 @@ namespace BattleGrid.Application.Services
                 Success = true,
                 Message = "Password updated successfuly."
             };
+        }
+
+        private static string FormatBanMessageDetail(BanList? ban)
+        {
+            if (ban is null || ban.IsReverted)
+                return "(contact support)";
+
+            if (!ban.IsTemporary)
+                return "INDEFINITELY!";
+
+            var end = BanListServices.GetBanEndUtc(ban);
+            if (!end.HasValue)
+                return "INDEFINITELY!";
+
+            return $"until {end.Value:yyyy-MM-dd HH:mm:ss} UTC";
         }
     }
 }

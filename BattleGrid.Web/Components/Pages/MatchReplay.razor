@@ -1,0 +1,383 @@
+@page "/replay/{MatchId:int}"
+@implements IAsyncDisposable
+@inject AuthStateService Auth
+@inject NavigationManager Nav
+@inject ApiService Api
+
+<PageTitle>Match Replay - BattleGrid</PageTitle>
+
+@if (!Auth.IsInitialized)
+{
+    <div class="loading-screen"><p class="muted">Restoring session...</p></div>
+}
+else if (!Auth.IsLoggedIn)
+{
+    <div class="loading-screen"><p class="muted">Redirecting to login...</p></div>
+}
+else if (_loading)
+{
+    <div class="loading-state">
+        <div class="radar-ping"></div>
+        <p class="muted">Loading replay data...</p>
+    </div>
+}
+else if (_errorMessage is { } loadErr)
+{
+    <div class="page-header">
+        <h1><span class="accent">◈</span> MATCH REPLAY</h1>
+    </div>
+    <div class="alert alert-danger"><span>✘</span> @loadErr</div>
+    <a href="@BackHref" class="btn btn-outline mt-sm">@BackLabel</a>
+}
+else if (_replay is { } replay)
+{
+    <div class="match-replay-page">
+        <div class="page-header match-replay-header">
+            <h1><span class="accent">◈</span> MATCH REPLAY #@replay.MatchId@(_isAdminView ? " (admin)" : "")</h1>
+            <p class="muted">@GetMatchSubtitle()</p>
+        </div>
+
+        @if (replay.Placements.Count == 0)
+        {
+            <div class="alert alert-info match-replay-info">
+                <p>No ship placement data was recorded for this match. So, there is nothing to replay.</p>
+            </div>
+            <a href="@BackHref" class="btn btn-outline mt-sm">@BackLabel</a>
+        }
+        else if (replay.Moves.Count == 0)
+        {
+            <div class="alert alert-info match-replay-info">
+                <p>A player left during or after ship placement, before any shots were fired. There is no battle replay for this match.</p>
+            </div>
+            <a href="@BackHref" class="btn btn-outline mt-sm">@BackLabel</a>
+        }
+        else
+        {
+        <div class="match-replay-controls card">
+            <div class="card-body match-replay-controls-inner">
+                <div class="match-replay-progress muted">
+                    Shots shown: <strong>@_revealedMoveCount</strong> / <strong>@replay.Moves.Count</strong>
+                    @if (_revealedMoveCount > 0 && _revealedMoveCount <= replay.Moves.Count)
+                    {
+                        var last = replay.Moves[_revealedMoveCount - 1];
+                        <span class="match-replay-last-shot">
+                            · Last: @FormatShooterLabel(last.ShooterPlayerId) →
+                            @GridCoordinates.ColumnIndexToLetter(last.HitX)@GridCoordinates.DisplayRowNumberFromY(last.HitY)
+                            (@(last.IsHit ? "hit" : "miss"))
+                        </span>
+                    }
+                </div>
+                <div class="match-replay-buttons">
+                    @if (_autoPlaying)
+                    {
+                        <button type="button" class="btn btn-danger btn-sm" @onclick="StopAutoAsync">Stop auto</button>
+                    }
+                    else
+                    {
+                        <button type="button" class="btn btn-primary btn-sm" disabled="@(replay.Moves.Count == 0 || _revealedMoveCount >= replay.Moves.Count)" @onclick="StartAutoAsync">Play auto</button>
+                    }
+                    <button type="button" class="btn btn-outline btn-sm" disabled="@(_revealedMoveCount == 0)" @onclick="PreviousMoveAsync">Previous</button>
+                    <button type="button" class="btn btn-outline btn-sm" disabled="@(_revealedMoveCount >= replay.Moves.Count)" @onclick="NextMoveAsync">Next</button>
+                    <button type="button" class="btn btn-outline btn-sm" disabled="@(_revealedMoveCount == 0)" @onclick="ResetReplayAsync">Reset shots</button>
+                    <a href="@BackHref" class="btn btn-outline btn-sm">Back</a>
+                </div>
+            </div>
+        </div>
+
+        <div class="game-battle-boards match-replay-boards">
+            <div class="card game-board-card">
+                <div class="card-header">
+                    <span class="card-icon">▣</span>
+                    <span class="card-label">@GetBoardTitle(_viewerBoardId)</span>
+                </div>
+                <div class="card-body">
+                    <ReplayBoardGrid BoardOwnerId="_viewerBoardId"
+                                     Replay="replay"
+                                     RevealedMoveCount="_revealedMoveCount"
+                                     Ships="@GetShipsFor(_viewerBoardId)" />
+                </div>
+            </div>
+
+            <div class="card game-board-card game-board-card--opponent">
+                <div class="card-header">
+                    <span class="card-icon">◎</span>
+                    <span class="card-label">@GetBoardTitle(GetOpponentId(_viewerBoardId))</span>
+                </div>
+                <div class="card-body">
+                    @{
+                        var opponentBoardId = GetOpponentId(_viewerBoardId);
+                    }
+                    <ReplayBoardGrid BoardOwnerId="opponentBoardId"
+                                     Replay="replay"
+                                     RevealedMoveCount="_revealedMoveCount"
+                                     Ships="@GetShipsFor(opponentBoardId)" />
+                </div>
+            </div>
+        </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public int MatchId { get; set; }
+    [SupplyParameterFromQuery(Name = "admin")]
+    public bool AdminReplay { get; set; }
+
+    const int AutoStepDelayMs = 900;
+
+    MatchReplayResponseDto? _replay;
+    bool _loading = true;
+    string? _errorMessage;
+    bool _pageDataLoaded;
+    bool _isAdminView;
+    int _viewerBoardId;
+    int _revealedMoveCount;
+    bool _autoPlaying;
+    CancellationTokenSource? _autoCts;
+
+    readonly Dictionary<int, Dictionary<(int X, int Y), int>> _shipsByPlayer = new();
+
+    protected override void OnInitialized()
+    {
+        Auth.OnChange += OnAuthChanged;
+        if (Auth.IsInitialized && !Auth.IsLoggedIn)
+            Nav.NavigateTo("/login");
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _pageDataLoaded)
+            return;
+
+        await TryLoadReplayAsync();
+    }
+
+    async Task TryLoadReplayAsync()
+    {
+        if (_pageDataLoaded)
+            return;
+
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn || Auth.CurrentUser is null)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        _pageDataLoaded = true;
+        _loading = true;
+        _errorMessage = null;
+        await InvokeAsync(StateHasChanged);
+
+        _isAdminView = AdminReplay && Auth.CurrentUser.IsAdmin;
+
+        if (AdminReplay && !_isAdminView)
+        {
+            _loading = false;
+            _errorMessage = "Administrator privileges are required to view this replay.";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        var dto = _isAdminView
+            ? await Api.GetAdminMatchReplayAsync(MatchId)
+            : await Api.GetMatchReplayAsync(MatchId);
+        _loading = false;
+
+        if (dto is null)
+        {
+            _errorMessage = _isAdminView
+                ? "Replay not found. The match may not exist, may still be in progress, or may not have a winner."
+                : "Replay not found. The match may be incomplete or you did not participate.";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        _replay = dto;
+        _viewerBoardId = _isAdminView
+            ? dto.Player1Id
+            : ResolveViewerBoardId(dto, Auth.CurrentUser.UserID);
+        BuildShipMaps(dto);
+        _revealedMoveCount = 0;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    void BuildShipMaps(MatchReplayResponseDto replay)
+    {
+        _shipsByPlayer.Clear();
+        foreach (var p in replay.Placements)
+        {
+            var length = p.Length > 0 ? p.Length : 1;
+            var width = p.Width > 0 ? p.Width : 1;
+            if (!ShipPlacementHelper.TryGenerateRectangle(
+                    new Coordinate(p.StartX, p.StartY),
+                    length,
+                    width,
+                    p.IsVertical,
+                    out var cells))
+            {
+                continue;
+            }
+
+            if (!_shipsByPlayer.TryGetValue(p.PlayerId, out var map))
+            {
+                map = new Dictionary<(int X, int Y), int>();
+                _shipsByPlayer[p.PlayerId] = map;
+            }
+
+            foreach (var c in cells)
+                map[(c.X, c.Y)] = p.ShipId;
+        }
+    }
+
+
+    IReadOnlyDictionary<(int X, int Y), int> GetShipsFor(int boardOwnerId) =>
+        _shipsByPlayer.TryGetValue(boardOwnerId, out var map)
+            ? map
+            : new Dictionary<(int X, int Y), int>();
+
+    async Task PreviousMoveAsync()
+    {
+        if (_replay is null || _revealedMoveCount == 0)
+            return;
+
+        await StopAutoAsync();
+        _revealedMoveCount--;
+        StateHasChanged();
+    }
+
+    async Task NextMoveAsync()
+    {
+        if (_replay is null || _revealedMoveCount >= _replay.Moves.Count)
+            return;
+
+        await StopAutoAsync();
+        _revealedMoveCount++;
+        StateHasChanged();
+    }
+
+    async Task ResetReplayAsync()
+    {
+        await StopAutoAsync();
+        _revealedMoveCount = 0;
+        StateHasChanged();
+    }
+
+    async Task StartAutoAsync()
+    {
+        if (_replay is null || _replay.Moves.Count == 0)
+            return;
+
+        await StopAutoAsync();
+        _autoCts = new CancellationTokenSource();
+        _autoPlaying = true;
+        var token = _autoCts.Token;
+
+        try
+        {
+            while (_revealedMoveCount < _replay.Moves.Count && !token.IsCancellationRequested)
+            {
+                await Task.Delay(AutoStepDelayMs, token);
+                _revealedMoveCount++;
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            _autoPlaying = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    async Task StopAutoAsync()
+    {
+        if (_autoCts is null)
+        {
+            _autoPlaying = false;
+            return;
+        }
+
+        await _autoCts.CancelAsync();
+        _autoCts.Dispose();
+        _autoCts = null;
+        _autoPlaying = false;
+    }
+
+    int GetOpponentId(int boardOwnerId) =>
+        _replay is null
+            ? boardOwnerId
+            : boardOwnerId == _replay.Player1Id ? _replay.Player2Id : _replay.Player1Id;
+
+    static int ResolveViewerBoardId(MatchReplayResponseDto dto, int currentUserId)
+    {
+        if (currentUserId == dto.Player1Id)
+            return dto.Player1Id;
+        if (currentUserId == dto.Player2Id)
+            return dto.Player2Id;
+        return dto.Player1Id;
+    }
+
+    string BackHref => _isAdminView ? "/admin" : "/match-history";
+    string BackLabel => _isAdminView ? "Back to admin panel" : "Back to history";
+
+    string GetMatchSubtitle() =>
+        _replay is null
+            ? string.Empty
+            : _isAdminView
+                ? $"{_replay.Player1UserName} vs {_replay.Player2UserName}"
+                : $"{GetViewerBoardLabel(_viewerBoardId)} vs {GetOpponentBoardLabel(_viewerBoardId)}";
+
+    string GetBoardTitle(int boardOwnerId)
+    {
+        if (_replay is null)
+            return "Board";
+        if (_isAdminView)
+            return GetPlayerLabel(boardOwnerId);
+        if (boardOwnerId == _viewerBoardId)
+            return $"Your fleet · {GetPlayerLabel(boardOwnerId)}";
+        return $"Opponent · {GetPlayerLabel(boardOwnerId)}";
+    }
+
+    string GetPlayerLabel(int playerId) =>
+        _replay switch
+        {
+            null => $"#{playerId}",
+            _ when playerId == _replay.Player1Id => _replay.Player1UserName,
+            _ => _replay.Player2UserName
+        };
+
+    string GetViewerBoardLabel(int viewerId) => GetPlayerLabel(viewerId);
+
+    string GetOpponentBoardLabel(int viewerId) => GetPlayerLabel(GetOpponentId(viewerId));
+
+    string FormatShooterLabel(int shooterId) =>
+        _isAdminView
+            ? GetPlayerLabel(shooterId)
+            : shooterId == _viewerBoardId ? "You" : GetOpponentBoardLabel(_viewerBoardId);
+
+    private async void OnAuthChanged()
+    {
+        await InvokeAsync(async () =>
+        {
+            if (Auth.IsInitialized && !Auth.IsLoggedIn)
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+
+            if (Auth.IsInitialized && Auth.IsLoggedIn && !_pageDataLoaded)
+                await TryLoadReplayAsync();
+            else
+                StateHasChanged();
+        });
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        Auth.OnChange -= OnAuthChanged;
+        await StopAutoAsync();
+    }
+}

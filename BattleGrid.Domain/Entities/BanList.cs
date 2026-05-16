@@ -1,5 +1,3 @@
-using Microsoft.VisualBasic;
-
 namespace BattleGrid.Domain.Entities;
 
 public sealed class BanList
@@ -10,13 +8,13 @@ public sealed class BanList
     public string BanReason { get; set; } = "";
     public bool IsReverted { get; set; } = false;
 
-    // Default 0 for service operations they revert a temporary ban after its duration has ended.
-    // If we see 0 as RevertingAdminID for a permanent ban, we have a problem!
+    // Administrator who reverted the ban; null when reverted automatically by the system.
     public int? RevertingAdminID { get; set; }
     public string? RevertingReason { get; set; }
     public bool IsTemporary { get; set; } = false;  // Permanent by default
+    public DateTimeOffset BannedAt { get; set; } = DateTimeOffset.UtcNow.ToUniversalTime();
+
     // For temporary bans, this indicates the duration of the ban (e.g., 1 day, 1 week, etc.)
-    public DateTimeOffset BannedAt { get; set; } = DateTimeOffset.UtcNow;
     public TimeSpan? Duration { get; set; } = TimeSpan.FromDays(36500); // Permanent by default. 100 years
     public DateTimeOffset? BannedUntil { get; set; }
 }

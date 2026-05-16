@@ -1,7 +1,7 @@
 @page "/users"
 @inject ApiService Api
 
-<PageTitle>Personnel — BattleGrid</PageTitle>
+<PageTitle>Personnel - BattleGrid</PageTitle>
 
 <div class="page-header">
     <h1><span class="accent">◈</span> PERSONNEL DATABASE</h1>
@@ -48,7 +48,7 @@ else
                 {
                     <tr class="@(user.IsBanned ? "row-danger" : "")">
                         <td class="cell-id">#@user.UserID</td>
-                        <td>@(user.UserName ?? "—")</td>
+                        <td>@user.UserName</td>
                         <td class="cell-email">@user.Email</td>
                         <td>
                             @if (user.IsAdmin)

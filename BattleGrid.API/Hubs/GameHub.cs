@@ -1,4 +1,4 @@
-﻿using System.Security.Claims;
+using System.Security.Claims;
 using BattleGrid.API.Services;
 using BattleGrid.Application.Interfaces;
 using BattleGrid.Contracts.RequestDtos;
@@ -10,6 +10,9 @@ namespace BattleGrid.API.Hubs;
 [Authorize]
 public sealed class GameHub : Hub
 {
+    // Hubs are kind of always active. Thus, scoped services can not be directly injected because they are used, and disposed afterwards.
+    // So, we inject a scope factory, use it to call any services we need to use the service
+    //  and dispose the service while the scope that called them (always running hub) is till active 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly InMemoryMatchGameService _matchRuntime;
 
@@ -30,7 +33,9 @@ public sealed class GameHub : Hub
 
         var userId = GetUserId(Context);
         await using var scope = _scopeFactory.CreateAsyncScope();
+        // Like this: Get the match services,
         var matches = scope.ServiceProvider.GetRequiredService<IMatchServices>();
+        //  use it and ScopeFactory gets rid of it when its job is done
         var ok = await matches.ValidatePlayerAsync(matchId.Value, userId);
         if (!ok.Success)
         {

@@ -1,122 +1,96 @@
-using System.Net;
-using System.Security.Claims;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using BattleGrid.Contracts.RequestDtos;
+using BattleGrid.API.Extensions;
 using BattleGrid.Application.Interfaces;
-using BattleGrid.Infrastructure.Data;
-using BattleGrid.Domain.Entities;
+using BattleGrid.Contracts.RequestDtos;
 using BattleGrid.Contracts.ResponseDtos;
-using Microsoft.AspNetCore.Http.HttpResults;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 
+namespace BattleGrid.API.Controllers;
 
-namespace BattleGrid.API.Controllers
+[ApiController]
+[Route("api/[controller]")]
+[Authorize]
+public class UserController : ControllerBase
 {
-    [ApiController]
-    [Route("api/[controller]")]
-    public class UserController : ControllerBase
+    private readonly IUserServices _userServices;
+
+    public UserController(IUserServices userService)
     {
-        private readonly BattleGridDbContext _context;
-        private readonly IUserServices _userServices;
+        _userServices = userService;
+    }
 
-        public UserController(BattleGridDbContext context,
-                              IUserServices userService)
+    [HttpGet("all")]
+    public async Task<ActionResult> GetAllUsers()
+    {
+        try
         {
-            _context = context;
-            _userServices = userService;
+            var users = await _userServices.GetAllUsersAsync();
+
+            if (users == null)
+                return NotFound("No user found!");
+
+            return Ok(users);
         }
-
-        [HttpGet("all")]
-        public async Task<ActionResult> GetAllUsers()
+        catch (Exception ex)
         {
-            try
-            {
-                var users = await _userServices.GetAllUsersAsync();
-
-                if (users == null)
-                {
-                    return NotFound("No user found!");
-                }
-
-                return Ok(users);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"An error occured while retrieving the users: {ex.Message}");
-            }
+            return StatusCode(500, $"An error occured while retrieving the users: {ex.Message}");
         }
+    }
 
-        [HttpGet("{userId:int}")]
-        public async Task<ActionResult> GetUserById(int userId)
+    [HttpGet("{userId:int}")]
+    public async Task<ActionResult> GetUserById(int userId)
+    {
+        try
         {
-            try
-            {
-                var user = await _userServices.GetByIdAsync(userId);
+            var user = await _userServices.GetByIdAsync(userId);
 
-                if (user == null)
-                {
-                    return NotFound("User not found!");
-                }
+            if (user == null)
+                return NotFound("User not found!");
 
-                return Ok(user);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"An error occured while retrieving the user: {ex.Message}");
-            }
+            return Ok(user);
         }
-
-        [HttpGet("{loginInfo}")]
-        public async Task<IActionResult> GetByLoginInfo(string loginInfo)
+        catch (Exception ex)
         {
-            try
-            {
-                var user = await _userServices.GetByLoginInfoAsync(loginInfo);
-
-                if (user == null)
-                {
-                    return NotFound("User not found!");
-                }
-
-                return Ok(user);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"An error occured while retrieving the user info: {ex.Message}");
-            }
+            return StatusCode(500, $"An error occured while retrieving the user: {ex.Message}");
         }
+    }
 
-        [HttpPatch("bySystem")]
-        public async Task<ActionResult> UserUpdateBySystem([FromBody] UserUpdateSystemRequestDto dto)
+    /// <summary> Competitive stats for the authenticated user for the active global season. </summary>
+    [HttpGet("stats/current-season")]
+    public async Task<ActionResult<PlayerSeasonStatsResponseDto>> GetMyCurrentSeasonStats(
+        [FromServices] IPlayerStatSeasonService playerStatSeason)
+    {
+        if (!User.TryGetAuthenticatedUserId(out var uid))
+            return Unauthorized();
+
+        try
         {
-            try
-            {
+            var stats = await playerStatSeason.GetCurrentSeasonStatsAsync(uid);
+            return Ok(stats);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"An error occured while retrieving season stats: {ex.Message}");
+        }
+    }
 
-                if (string.IsNullOrEmpty(dto.UserName) && !dto.BanLifted)
-                {
-                    return BadRequest("There is nothing to update!");
-                }
+    /// <summary> Lookup by username or email (used before login). </summary>
+    [HttpGet("{loginInfo}")]
+    [AllowAnonymous]
+    public async Task<IActionResult> GetByLoginInfo(string loginInfo)
+    {
+        try
+        {
+            var user = await _userServices.GetByLoginInfoAsync(loginInfo);
 
-                var user = await _userServices.GetByIdAsync(dto.UserID);
+            if (user == null)
+                return NotFound("User not found!");
 
-                if (user == null)
-                {
-                    return BadRequest("User does not exist!");
-                }
-
-                var result = await _userServices.UserUpdateBySystemAsync(dto);
-
-                if (!result.Success)
-                {
-                    return BadRequest(result.Message);
-                }
-
-                return Ok(result.Message);
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, $"An error occured while updating the user: {ex.Message}");
-            }
+            return Ok(user);
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, $"An error occured while retrieving the user info: {ex.Message}");
         }
     }
 }

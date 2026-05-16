@@ -9,5 +9,5 @@ public sealed class ShipPlacement
     public int StartX { get; set; }
     public int StartY { get; set; }
     public bool IsVertical { get; set; }
-    public DateTimeOffset PlacedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset PlacedAt { get; set; } = DateTimeOffset.UtcNow.ToUniversalTime();
 }

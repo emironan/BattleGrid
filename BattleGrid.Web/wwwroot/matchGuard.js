@@ -10,6 +10,6 @@ window.battleGridMatchGuard = {
         }
     },
     confirmLeave: function () {
-        return window.confirm("Leave this match? You will forfeit and the other player may win.");
+        return window.confirm("Leave this match? You will forfeit and the other player will win.");
     }
 };

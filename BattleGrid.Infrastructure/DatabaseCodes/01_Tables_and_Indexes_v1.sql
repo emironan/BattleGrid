@@ -4,7 +4,7 @@
 
 CREATE TABLE "User" (
     "UserID" SERIAL PRIMARY KEY,
-    "UserName" VARCHAR(100) UNIQUE,
+    "UserName" VARCHAR(100) NOT NULL UNIQUE,
         -- Only a-z, A-Z, 0-9 and _ are allowed in UserName. No spaces or special characters.
         CONSTRAINT "Proper_UserName" CHECK ("UserName" ~* '^[A-Za-z0-9_]+$'),
     "Email" VARCHAR(100) NOT NULL UNIQUE 
@@ -32,7 +32,7 @@ CREATE TABLE "PlayerStat" (
              ELSE CAST(("MatchesWon"::numeric * 100 / "MatchesPlayed"::numeric) AS DECIMAL(5, 2))
         END
     ) STORED CHECK ("WinRate" >= 0),
-    "Rating" INT NOT NULL DEFAULT 1000, -- Starting rating for new players
+    "Rating" INT NOT NULL DEFAULT 1000 CHECK ("Rating" >= 400 AND "Rating" <= 3000), -- Starting rating for new players is 1000
     "HighestRating" INT NOT NULL DEFAULT 1000, -- Will be updated whenever CurrentRating exceeds it
     "CreatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "LastUpdatedAt" TIMESTAMPTZ,
@@ -61,7 +61,7 @@ CREATE TABLE "Match" (
     -- 0 = Abondoned, 1 = P1 Won, 2 = P2 Won, 3 = In Progress, 4 = Placing Ships, 5 = Waiting/Loading
     "Status" INT NOT NULL DEFAULT '5'
         CHECK ("Status" BETWEEN 0 AND 5),
-    "TotalNoOfTurns" INT NOT NULL DEFAULT 0,
+    "TotalNoOfMoves" INT NOT NULL DEFAULT 0,
     "FinishReason" VARCHAR(255),
     "StartedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "FinishedAt" TIMESTAMPTZ
@@ -74,7 +74,7 @@ CREATE TABLE "MatchMove" (
     "MoveNumber" INT NOT NULL,
     "HitX" INT NOT NULL,
     "HitY" INT NOT NULL,
-    "Result" BOOLEAN NOT NULL,
+    "IsHit" BOOLEAN NOT NULL,
     "TimeOfMove" TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -106,24 +106,14 @@ CREATE TABLE "Spectator" (
     "Duration" INTERVAL DEFAULT '0 seconds'
 );
 
-CREATE TABLE "MatchmakingQueue" (
-    "QueueID" SERIAL PRIMARY KEY,
-    "PlayerID" INT NOT NULL REFERENCES "User"("UserID"),
-    UNIQUE ("QueueID", "PlayerID"), -- Ensure a player can only be in the queue once
-    -- We will delete the player from this table once they are matched. 
-    -- So, we don't need an "IsActive" column. And the table won't become too big.
-    "JoinedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
 CREATE TABLE "BanList" (
     "BanID" SERIAL PRIMARY KEY,
     "AdminID" INT NOT NULL REFERENCES "User"("UserID"),
     "PlayerID" INT NOT NULL REFERENCES "User"("UserID"),
     "BanReason" VARCHAR(255) NOT NULL,
     "IsReverted" BOOLEAN NOT NULL DEFAULT FALSE,
-    -- 0 means a system service automatically reverted it when the duration ended.
-    -- It only works with temporary bans! If we see a 0 as RevertingAdminID for a permanent ban, we have a problem!
-    "RevertingAdminID" INT, 
+    -- NULL when the background worker auto-reverts an expired temporary ban; otherwise the admin UserID.
+    "RevertingAdminID" INT REFERENCES "User"("UserID"),
     "RevertingReason" VARCHAR(255),
     "IsTemporary" BOOLEAN NOT NULL DEFAULT FALSE,
     "BannedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -147,9 +137,6 @@ INSERT INTO "User" ("UserName", "Email", "PasswordHash", "IsAdmin") VALUES
 ('P2', 'p2@test.com', '1234', 'false'),
 ('P3', 'p3@test.com', '1234', 'false'),
 ('P4', 'p4@test.com', '1234', 'false');
-
-INSERT INTO "Match" ("Player1ID", "Player2ID", "Status") VALUES
-(1, 2, 3); -- In Progress
 
 --------------------------------------------------------------------------------------------------------------------------------
 ---------------------------------------------------------- *INDEXES* -----------------------------------------------------------
@@ -178,10 +165,9 @@ CREATE INDEX idx_matchmove_MatchID ON "MatchMove" ("MatchID");
 
 CREATE INDEX idx_spectator_spectatorid_matchid ON "Spectator" ("SpectatorID", "MatchID");
 
-CREATE INDEX idx_matchmakingqueue_joinedat ON "MatchmakingQueue" ("JoinedAt");
-
 CREATE INDEX idx_banlist_adminid ON "BanList" ("AdminID");
 CREATE INDEX idx_banlist_playerid ON "BanList" ("PlayerID");
+CREATE INDEX idx_banlist_revertingadminid ON "BanList" ("RevertingAdminID");
 CREATE INDEX idx_banlist_bannedat ON "BanList" ("BannedAt");
 CREATE INDEX idx_banlist_duration ON "BanList" ("Duration");
 CREATE INDEX idx_banlist_banneduntil ON "BanList" ("BannedUntil");

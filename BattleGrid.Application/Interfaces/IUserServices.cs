@@ -10,7 +10,6 @@ namespace BattleGrid.Application.Interfaces
         Task<UserResponseDto?> GetByIdAsync(int userId);
         Task<UserResponseDto?> GetByLoginInfoAsync(string loginInfo);   // UserName or Email
         Task<string> HashPasswordAsync(int userId);
-        Task<GeneralResponseDto> UserUpdateBySystemAsync(UserUpdateSystemRequestDto dto);
         //aaa Task<GeneralResponseDto> UserUpdateByUserAsync(UserUpdateUserRequestDto dto);
         //aaa Task<GeneralResponseDto> UserUpdateByAdminAsync(UserUpdateAdminRequestDto dto);
     }

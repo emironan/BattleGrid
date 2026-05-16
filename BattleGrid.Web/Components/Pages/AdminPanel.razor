@@ -1,0 +1,485 @@
+@page "/admin"
+@implements IAsyncDisposable
+@inject AuthStateService Auth
+@inject NavigationManager Nav
+@inject ApiService Api
+
+<PageTitle>Admin Panel - BattleGrid</PageTitle>
+
+@if (!Auth.IsInitialized)
+{
+    <div class="loading-screen">
+        <p class="muted">Restoring session...</p>
+    </div>
+}
+else if (!Auth.IsLoggedIn)
+{
+    <div class="loading-screen">
+        <p class="muted">Redirecting to login...</p>
+    </div>
+}
+else if (Auth.CurrentUser?.IsAdmin != true)
+{
+    <div class="page-header">
+        <h1><span class="accent">◈</span> ACCESS DENIED</h1>
+    </div>
+    <div class="alert alert-danger">
+        <span>✘</span> Administrator privileges are required to view this page.
+    </div>
+    <a href="/dashboard" class="btn btn-outline mt-sm">Back to dashboard</a>
+}
+else
+{
+    <div class="admin-panel-page">
+        <div class="page-header">
+            <h1><span class="accent">◈</span> ADMIN PANEL</h1>
+            <p class="muted">Season and player moderation</p>
+        </div>
+
+        @if (!_pageDataLoaded)
+        {
+            <div class="loading-state">
+                <div class="radar-ping"></div>
+                <p class="muted">Loading panel data...</p>
+            </div>
+        }
+        else
+        {
+            <div class="cards-grid admin-panel-grid">
+                <div class="card card-accent admin-season-card">
+                    <div class="card-header">
+                        <span class="card-icon">📅</span>
+                        <span class="card-label">COMPETITIVE SEASON</span>
+                    </div>
+                    <div class="card-body">
+                        @if (_seasonStats is { } stats)
+                        {
+                            <table class="info-table">
+                                <tr>
+                                    <td class="info-key">CURRENT SEASON</td>
+                                    <td class="info-val">#@stats.SeasonNo</td>
+                                </tr>
+                                <tr>
+                                    <td class="info-key">YOUR RATING</td>
+                                    <td class="info-val">@stats.Rating <span class="muted">(season peak @stats.HighestRating)</span></td>
+                                </tr>
+                                <tr>
+                                    <td class="info-key">YOUR MATCHES</td>
+                                    <td class="info-val">@stats.MatchesPlayed played · @stats.MatchesWon won</td>
+                                </tr>
+                            </table>
+                        }
+                        else
+                        {
+                            <p class="muted">Could not load current season stats.</p>
+                        }
+
+                        <p class="muted admin-panel-help">
+                            Ending the season creates your row for season
+                            <strong>@((_seasonStats?.SeasonNo ?? 0) + 1)</strong>
+                            with carryover rating applied. Other players receive a new season row when they queue.
+                        </p>
+
+                        @if (_seasonStatusMessage is { } seasonMsg)
+                        {
+                            <div class="alert @(_seasonStatusSuccess ? "alert-info" : "alert-danger") mt-sm">
+                                <span>@(_seasonStatusSuccess ? "✓" : "✘")</span> @seasonMsg
+                            </div>
+                        }
+
+                        <button type="button"
+                                class="btn btn-primary mt-sm"
+                                disabled="@_advancingSeason"
+                                @onclick="AdvanceSeasonAsync">
+                            @(_advancingSeason ? "ADVANCING SEASON…" : "END SEASON & START NEXT")
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card admin-ban-card">
+                    <div class="card-header">
+                        <span class="card-icon">⛔</span>
+                        <span class="card-label">BAN PLAYER</span>
+                    </div>
+                    <div class="card-body">
+                        <p class="muted admin-panel-help">
+                            Enter the player's username or email. Permanent bans are applied by default.
+                        </p>
+
+                        <div class="admin-form-field">
+                            <label class="admin-form-label" for="ban-player-info">Player (username or email)</label>
+                            <input id="ban-player-info"
+                                   class="form-control"
+                                   @bind="_banPlayerInfo"
+                                   @bind:event="oninput"
+                                   placeholder="username or email"
+                                   disabled="@_banningPlayer" />
+                        </div>
+
+                        <div class="admin-form-field">
+                            <label class="admin-form-label" for="ban-reason">Reason</label>
+                            <input id="ban-reason"
+                                   class="form-control"
+                                   @bind="_banReason"
+                                   @bind:event="oninput"
+                                   placeholder="Reason for ban"
+                                   disabled="@_banningPlayer" />
+                        </div>
+
+                        <label class="admin-form-check">
+                            <input type="checkbox" @bind="_banIsTemporary" disabled="@_banningPlayer" />
+                            <span>Temporary ban</span>
+                        </label>
+
+                        @if (_banIsTemporary)
+                        {
+                            <div class="admin-form-field">
+                                <label class="admin-form-label" for="ban-days">Duration (days)</label>
+                                <input id="ban-days"
+                                       type="number"
+                                       min="1"
+                                       max="3650"
+                                       class="form-control"
+                                       @bind="_banDurationDays"
+                                       disabled="@_banningPlayer" />
+                            </div>
+                        }
+
+                        @if (_banStatusMessage is { } banMsg)
+                        {
+                            <div class="alert @(_banStatusSuccess ? "alert-info" : "alert-danger") mt-sm">
+                                <span>@(_banStatusSuccess ? "✓" : "✘")</span> @banMsg
+                            </div>
+                        }
+
+                        <button type="button"
+                                class="btn btn-danger mt-sm"
+                                disabled="@(_banningPlayer || !CanSubmitBan)"
+                                @onclick="BanPlayerAsync">
+                            @(_banningPlayer ? "BANNING…" : "BAN PLAYER")
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card admin-unban-card">
+                    <div class="card-header">
+                        <span class="card-icon">✓</span>
+                        <span class="card-label">UNBAN PLAYER</span>
+                    </div>
+                    <div class="card-body">
+                        <p class="muted admin-panel-help">
+                            Lifts the active ban for a player, including permanent bans. The reverting administrator is recorded for audit.
+                        </p>
+
+                        <div class="admin-form-field">
+                            <label class="admin-form-label" for="unban-player-info">Player (username or email)</label>
+                            <input id="unban-player-info"
+                                   class="form-control"
+                                   @bind="_unbanPlayerInfo"
+                                   @bind:event="oninput"
+                                   placeholder="username or email"
+                                   disabled="@_unbanningPlayer" />
+                        </div>
+
+                        <div class="admin-form-field">
+                            <label class="admin-form-label" for="unban-reason">Reason for unban</label>
+                            <input id="unban-reason"
+                                   class="form-control"
+                                   @bind="_unbanReason"
+                                   @bind:event="oninput"
+                                   placeholder="Reason (saved on ban record)"
+                                   disabled="@_unbanningPlayer" />
+                        </div>
+
+                        @if (_unbanStatusMessage is { } unbanMsg)
+                        {
+                            <div class="alert @(_unbanStatusSuccess ? "alert-info" : "alert-danger") mt-sm">
+                                <span>@(_unbanStatusSuccess ? "✓" : "✘")</span> @unbanMsg
+                            </div>
+                        }
+
+                        <button type="button"
+                                class="btn btn-outline mt-sm"
+                                disabled="@(_unbanningPlayer || !CanSubmitUnban)"
+                                @onclick="UnbanPlayerAsync">
+                            @(_unbanningPlayer ? "UNBANNING…" : "UNBAN PLAYER")
+                        </button>
+                    </div>
+                </div>
+
+                <div class="card admin-replay-card">
+                    <div class="card-header">
+                        <span class="card-icon">▶</span>
+                        <span class="card-label">MATCH REPLAY</span>
+                    </div>
+                    <div class="card-body">
+                        <p class="muted admin-panel-help">
+                            Enter a match ID to watch its replay. Only finished matches with a winner can be replayed.
+                        </p>
+
+                        <div class="admin-form-field">
+                            <label class="admin-form-label" for="replay-match-id">Match ID</label>
+                            <input id="replay-match-id"
+                                   type="number"
+                                   min="1"
+                                   class="form-control"
+                                   @bind="_replayMatchIdInput"
+                                   placeholder="e.g. 42"
+                                   disabled="@_openingReplay" />
+                        </div>
+
+                        @if (_replayStatusMessage is { } replayMsg)
+                        {
+                            <div class="alert @(_replayStatusSuccess ? "alert-info" : "alert-danger") mt-sm">
+                                <span>@(_replayStatusSuccess ? "✓" : "✘")</span> @replayMsg
+                            </div>
+                        }
+
+                        <button type="button"
+                                class="btn btn-primary mt-sm"
+                                disabled="@(_openingReplay || !CanOpenReplay)"
+                                @onclick="OpenReplayAsync">
+                            @(_openingReplay ? "OPENING…" : "WATCH REPLAY")
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    bool _pageDataLoaded;
+    bool _advancingSeason;
+    bool _banningPlayer;
+    bool _unbanningPlayer;
+    bool _openingReplay;
+    bool _seasonStatusSuccess;
+    bool _banStatusSuccess;
+    bool _unbanStatusSuccess;
+    bool _replayStatusSuccess;
+    string? _seasonStatusMessage;
+    string? _banStatusMessage;
+    string? _unbanStatusMessage;
+    string? _replayStatusMessage;
+    PlayerSeasonStatsResponseDto? _seasonStats;
+
+    string _replayMatchIdInput = string.Empty;
+    string _banPlayerInfo = string.Empty;
+    string _banReason = string.Empty;
+    string _unbanPlayerInfo = string.Empty;
+    string _unbanReason = string.Empty;
+    bool _banIsTemporary;
+    int _banDurationDays = 7;
+
+    bool CanSubmitBan =>
+        !string.IsNullOrWhiteSpace(_banPlayerInfo) && !string.IsNullOrWhiteSpace(_banReason);
+
+    bool CanSubmitUnban =>
+        !string.IsNullOrWhiteSpace(_unbanPlayerInfo) && !string.IsNullOrWhiteSpace(_unbanReason);
+
+    bool CanOpenReplay =>
+        int.TryParse(_replayMatchIdInput.Trim(), out var id) && id > 0;
+
+    protected override void OnInitialized()
+    {
+        Auth.OnChange += OnAuthChanged;
+        if (Auth.IsInitialized)
+        {
+            if (!Auth.IsLoggedIn)
+                Nav.NavigateTo("/login");
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _pageDataLoaded)
+            return;
+
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        if (Auth.CurrentUser?.IsAdmin != true)
+            return;
+
+        await LoadPanelDataAsync();
+    }
+
+    async Task LoadPanelDataAsync()
+    {
+        _pageDataLoaded = false;
+        await InvokeAsync(StateHasChanged);
+
+        _seasonStats = await Api.GetMyCurrentSeasonStatsAsync();
+        _pageDataLoaded = true;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    async Task AdvanceSeasonAsync()
+    {
+        _advancingSeason = true;
+        _seasonStatusMessage = null;
+        await InvokeAsync(StateHasChanged);
+
+        var result = await Api.AdvanceSeasonAsync();
+        _advancingSeason = false;
+
+        if (result is null)
+        {
+            _seasonStatusSuccess = false;
+            _seasonStatusMessage = "Could not reach the API. Is the server running?";
+        }
+        else if (!result.Success)
+        {
+            _seasonStatusSuccess = false;
+            _seasonStatusMessage = string.IsNullOrWhiteSpace(result.Message)
+                ? "Season advance was rejected."
+                : result.Message;
+        }
+        else
+        {
+            _seasonStatusSuccess = true;
+            _seasonStatusMessage =
+                $"{result.Message} Your starting rating for season {result.NewSeasonNo} is {result.AdminStartingRating}.";
+            _seasonStats = await Api.GetMyCurrentSeasonStatsAsync();
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    async Task BanPlayerAsync()
+    {
+        _banningPlayer = true;
+        _banStatusMessage = null;
+        await InvokeAsync(StateHasChanged);
+
+        var request = new BanRequestDto
+        {
+            PlayerInfo = _banPlayerInfo.Trim(),
+            BanReason = _banReason.Trim(),
+            IsTemporary = _banIsTemporary,
+            Duration = _banIsTemporary
+                ? TimeSpan.FromDays(Math.Clamp(_banDurationDays, 1, 3650))
+                : TimeSpan.FromDays(36500)
+        };
+
+        var result = await Api.BanPlayerAsync(request);
+        _banningPlayer = false;
+
+        if (result is null)
+        {
+            _banStatusSuccess = false;
+            _banStatusMessage = "Could not reach the API. Is the server running?";
+        }
+        else if (!result.Success)
+        {
+            _banStatusSuccess = false;
+            _banStatusMessage = string.IsNullOrWhiteSpace(result.Message)
+                ? "Ban was rejected."
+                : result.Message;
+        }
+        else
+        {
+            _banStatusSuccess = true;
+            _banStatusMessage = result.Message;
+            _banPlayerInfo = string.Empty;
+            _banReason = string.Empty;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    async Task UnbanPlayerAsync()
+    {
+        _unbanningPlayer = true;
+        _unbanStatusMessage = null;
+        await InvokeAsync(StateHasChanged);
+
+        var request = new UnbanPlayerRequestDto
+        {
+            PlayerInfo = _unbanPlayerInfo.Trim(),
+            Reason = _unbanReason.Trim()
+        };
+
+        var result = await Api.UnbanPlayerAsync(request);
+        _unbanningPlayer = false;
+
+        if (result is null)
+        {
+            _unbanStatusSuccess = false;
+            _unbanStatusMessage = "Could not reach the API. Is the server running?";
+        }
+        else if (!result.Success)
+        {
+            _unbanStatusSuccess = false;
+            _unbanStatusMessage = string.IsNullOrWhiteSpace(result.Message)
+                ? "Unban was rejected."
+                : result.Message;
+        }
+        else
+        {
+            _unbanStatusSuccess = true;
+            _unbanStatusMessage = result.Message;
+            _unbanPlayerInfo = string.Empty;
+            _unbanReason = string.Empty;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    async Task OpenReplayAsync()
+    {
+        if (!int.TryParse(_replayMatchIdInput.Trim(), out var matchId) || matchId < 1)
+        {
+            _replayStatusSuccess = false;
+            _replayStatusMessage = "Enter a valid match ID.";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        _openingReplay = true;
+        _replayStatusMessage = null;
+        await InvokeAsync(StateHasChanged);
+
+        var dto = await Api.GetAdminMatchReplayAsync(matchId);
+        _openingReplay = false;
+
+        if (dto is null)
+        {
+            _replayStatusSuccess = false;
+            _replayStatusMessage =
+                "Replay not found. The match may not exist, may still be in progress, or may not have a winner.";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        Nav.NavigateTo($"/replay/{matchId}?admin=true");
+    }
+
+    private async void OnAuthChanged()
+    {
+        await InvokeAsync(async () =>
+        {
+            if (Auth.IsInitialized && !Auth.IsLoggedIn)
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+
+            if (Auth.IsInitialized && Auth.IsLoggedIn && Auth.CurrentUser?.IsAdmin == true && !_pageDataLoaded)
+                await LoadPanelDataAsync();
+            else
+                StateHasChanged();
+        });
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Auth.OnChange -= OnAuthChanged;
+        return ValueTask.CompletedTask;
+    }
+}

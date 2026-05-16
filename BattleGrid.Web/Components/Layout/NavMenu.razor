@@ -2,6 +2,8 @@
 @inject AuthStateService Auth
 @inject NavigationManager Nav
 @inject ActiveMatchSession MatchSession
+@inject QueueMatchmakingService Matchmaking
+@inject ResumableMatchService Resumable
 
 <nav class="navbar">
     <a href="/" class="navbar-brand">
@@ -14,12 +16,9 @@
         {
             <span class="nav-link nav-locked">MATCH IN PROGRESS</span>
         }
-        else if (!Auth.IsLoggedIn)
+        else
         {
             <NavLink href="/" class="nav-link" Match="NavLinkMatch.All">HOME</NavLink>
-        }
-        @if (!MatchSession.IsLocked)
-        {
             <NavLink href="/shiptypes" class="nav-link">FLEET</NavLink>
             <NavLink href="/users" class="nav-link">PERSONNEL</NavLink>
         }
@@ -29,11 +28,29 @@
             @if (!MatchSession.IsLocked)
             {
                 <NavLink href="/dashboard" class="nav-link">DASHBOARD</NavLink>
-                <NavLink href="/queue" class="nav-link">FIND MATCH</NavLink>
+                <NavLink href="/match-history" class="nav-link">HISTORY</NavLink>
+                @if (Auth.CurrentUser?.IsAdmin == true)
+                {
+                    <NavLink href="/admin" class="nav-link">ADMIN</NavLink>
+                }
+                @if (Resumable.HasResumableMatch && Resumable.MatchId is int navMatchId)
+                {
+                    <NavLink href="@($"/game/{navMatchId}")" class="nav-link nav-queue-link">REJOIN MATCH</NavLink>
+                }
+                else
+                {
+                    <NavLink href="/queue" class="nav-link nav-queue-link">
+                        FIND MATCH
+                        @if (Matchmaking.IsInQueue && Matchmaking.QueueStartedUtc is not null)
+                        {
+                            <span class="nav-queue-timer">@QueueMatchmakingService.FormatWaitClock(Matchmaking.GetQueueElapsed())</span>
+                        }
+                    </NavLink>
+                }
             }
             <span class="nav-user">
                 <span class="status-dot online"></span>
-                @(Auth.CurrentUser?.UserName ?? Auth.CurrentUser?.Email)
+                @(string.IsNullOrWhiteSpace(Auth.CurrentUser?.UserName) ? "-" : Auth.CurrentUser!.UserName)
                 @if (Auth.CurrentUser?.IsAdmin == true)
                 {
                     <span class="badge badge-admin">ADMIN</span>
@@ -54,9 +71,22 @@
     {
         Auth.OnChange += StateHasChanged;
         MatchSession.OnChange += OnMatchSessionChanged;
+        Matchmaking.OnStateChanged += OnMatchmakingChanged;
+        Resumable.OnChange += StateHasChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || !Auth.IsLoggedIn)
+            return;
+
+        await Resumable.RefreshAsync();
+        await InvokeAsync(StateHasChanged);
     }
 
     void OnMatchSessionChanged() => _ = InvokeAsync(StateHasChanged);
+
+    void OnMatchmakingChanged() => _ = InvokeAsync(StateHasChanged);
 
     async Task Logout()
     {
@@ -74,5 +104,7 @@
     {
         Auth.OnChange -= StateHasChanged;
         MatchSession.OnChange -= OnMatchSessionChanged;
+        Matchmaking.OnStateChanged -= OnMatchmakingChanged;
+        Resumable.OnChange -= StateHasChanged;
     }
 }

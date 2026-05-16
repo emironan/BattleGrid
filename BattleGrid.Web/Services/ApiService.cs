@@ -59,6 +59,43 @@ public class ApiService
         }
     }
 
+    public async Task LogoutAsync(string? refreshToken)
+    {
+        try
+        {
+            await _http.PostAsJsonAsync("/api/Auth/logout", new RefreshTokenRequestDto
+            {
+                RefreshToken = refreshToken
+            });
+        }
+        catch
+        {
+            // Local session is cleared even if the API call fails.
+        }
+    }
+
+    public async Task<(bool Success, LoginResponseDto? Data)> RefreshAccessTokenAsync(string refreshToken)
+    {
+        try
+        {
+            var response = await _http.PostAsJsonAsync("/api/Auth/refresh", new RefreshTokenRequestDto
+            {
+                RefreshToken = refreshToken
+            });
+            if (!response.IsSuccessStatusCode)
+            {
+                return (false, null);
+            }
+
+            var data = await response.Content.ReadFromJsonAsync<LoginResponseDto>();
+            return (data?.Success == true, data);
+        }
+        catch
+        {
+            return (false, null);
+        }
+    }
+
     public async Task<List<UserResponseDto>?> GetAllUsersAsync()
     {
         ApplyAuth();
@@ -78,6 +115,19 @@ public class ApiService
         {
             return await _http.GetFromJsonAsync<UserResponseDto>(
                 $"/api/User/{Uri.EscapeDataString(loginInfo)}");
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<PlayerSeasonStatsResponseDto?> GetMyCurrentSeasonStatsAsync()
+    {
+        ApplyAuth();
+        try
+        {
+            return await _http.GetFromJsonAsync<PlayerSeasonStatsResponseDto>("/api/User/stats/current-season");
         }
         catch
         {
@@ -120,6 +170,109 @@ public class ApiService
                 return null;
             resp.EnsureSuccessStatusCode();
             return await resp.Content.ReadFromJsonAsync<ResumableMatchResponseDto>();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Returns persisted terminal match state when the DB row is already finished (won/abandoned).
+    /// <c>null</c> when the match is still active or the user is not a participant.
+    /// </summary>
+    public async Task<MatchRecoveryStateDto?> GetMatchRecoveryIfTerminalAsync(int matchId)
+    {
+        ApplyAuth();
+        try
+        {
+            var resp = await _http.GetAsync($"/api/Match/{matchId}/recovery");
+            if (resp.StatusCode == HttpStatusCode.NoContent)
+                return null;
+            resp.EnsureSuccessStatusCode();
+            return await resp.Content.ReadFromJsonAsync<MatchRecoveryStateDto>();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<MatchHistoryResponseDto?> GetMatchHistoryAsync(int limit = 20)
+    {
+        ApplyAuth();
+        try
+        {
+            var capped = Math.Clamp(limit, 1, 20);
+            return await _http.GetFromJsonAsync<MatchHistoryResponseDto>($"/api/Match/history?limit={capped}");
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<MatchReplayResponseDto?> GetMatchReplayAsync(int matchId)
+    {
+        ApplyAuth();
+        try
+        {
+            return await _http.GetFromJsonAsync<MatchReplayResponseDto>($"/api/Match/{matchId}/replay");
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<MatchReplayResponseDto?> GetAdminMatchReplayAsync(int matchId)
+    {
+        ApplyAuth();
+        try
+        {
+            return await _http.GetFromJsonAsync<MatchReplayResponseDto>($"/api/Admin/matches/{matchId}/replay");
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<AdvanceSeasonResponseDto?> AdvanceSeasonAsync()
+    {
+        ApplyAuth();
+        try
+        {
+            var resp = await _http.PostAsync("/api/Admin/season/advance", null);
+            return await resp.Content.ReadFromJsonAsync<AdvanceSeasonResponseDto>();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<GeneralResponseDto?> BanPlayerAsync(BanRequestDto request)
+    {
+        ApplyAuth();
+        try
+        {
+            var resp = await _http.PostAsJsonAsync("/api/Admin/players/ban", request);
+            return await resp.Content.ReadFromJsonAsync<GeneralResponseDto>();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<GeneralResponseDto?> UnbanPlayerAsync(UnbanPlayerRequestDto request)
+    {
+        ApplyAuth();
+        try
+        {
+            var resp = await _http.PostAsJsonAsync("/api/Admin/players/unban", request);
+            return await resp.Content.ReadFromJsonAsync<GeneralResponseDto>();
         }
         catch
         {

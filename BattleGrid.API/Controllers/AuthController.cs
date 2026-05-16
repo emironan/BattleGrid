@@ -1,13 +1,10 @@
 
+using BattleGrid.API.Extensions;
 using BattleGrid.Contracts.RequestDtos;
+using BattleGrid.Contracts.ResponseDtos;
 using BattleGrid.Application.Interfaces;
-using System.Net;
-using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using BattleGrid.Infrastructure.Data;
-using BattleGrid.Domain.Entities;
-
 
 namespace BattleGrid.API.Controllers
 {
@@ -15,17 +12,18 @@ namespace BattleGrid.API.Controllers
     [Route("api/[controller]")]
     public class AuthController : ControllerBase
     {
-        private readonly BattleGridDbContext _context;
+        private const string AccessTokenCookieName = "AccessToken";
+        private const string RefreshTokenCookieName = "RefreshToken";
+
         private readonly IAuthServices _authServices;
 
-        public AuthController(BattleGridDbContext context, 
-                              IAuthServices authServices)
+        public AuthController(IAuthServices authServices)
         {
-            _context = context;
             _authServices = authServices;
         }
 
         [HttpPost("register")]
+        [AllowAnonymous]
         public async Task<IActionResult> Register([FromBody] RegisterRequestDto dto)
         {
             try
@@ -45,50 +43,24 @@ namespace BattleGrid.API.Controllers
         }
 
         [HttpPost("login")]
+        [AllowAnonymous]
         public async Task<IActionResult> Login([FromBody] LoginRequestDto dto)
         {
             try
             {
                 var loginResponse = await _authServices.LoginAsync(dto);
 
-                // Just in case
                 if (loginResponse == null)
                 {
                     return Unauthorized("Incorrect username/email or password.");
                 }
 
-                // If login failed, return the error message
                 if (!loginResponse.Success)
                 {
                     return Unauthorized(loginResponse.Message);
                 }
 
-                // Continue with successful login
-                // Set the cookies for access and refresh tokens
-                Response.Cookies.Append(
-                    "AccessToken",
-                    loginResponse.AccessToken,
-                    new CookieOptions
-                    {
-                        HttpOnly = true,
-                        Expires = loginResponse.ATExpiresAt,
-                        Secure = Request.IsHttps,
-                        SameSite = SameSiteMode.Lax,
-                        Path = "/"
-                    });
-
-                Response.Cookies.Append(
-                    "RefreshToken",
-                    loginResponse.RefreshToken,
-                    new CookieOptions
-                    {
-                        HttpOnly = true,
-                        Expires = loginResponse.RTExpiresAt,
-                        Secure = Request.IsHttps,
-                        SameSite = SameSiteMode.Lax,
-                        Path = "/"
-                    });
-
+                AppendAuthCookies(loginResponse);
                 return Ok(loginResponse);
             }
             catch
@@ -98,12 +70,68 @@ namespace BattleGrid.API.Controllers
 
         }
 
-        [HttpPatch("password")]
-        public async Task<IActionResult> UpdatePassword([FromBody] PasswordUpdateRequestDto dto, int userId)
+        [HttpPost("logout")]
+        [AllowAnonymous]
+        public async Task<IActionResult> Logout([FromBody] RefreshTokenRequestDto? dto)
         {
             try
             {
-                dto.UserID = userId;
+                var refreshToken = ResolveRefreshToken(dto?.RefreshToken);
+                var result = await _authServices.LogoutAsync(refreshToken ?? string.Empty);
+
+                ClearAuthCookies();
+
+                if (!result.Success)
+                {
+                    return BadRequest(result.Message);
+                }
+
+                return Ok(result.Message);
+            }
+            catch
+            {
+                return StatusCode(500, "An error occured during logout.");
+            }
+        }
+
+        [HttpPost("refresh")]
+        [AllowAnonymous]
+        public async Task<IActionResult> Refresh([FromBody] RefreshTokenRequestDto? dto)
+        {
+            try
+            {
+                var refreshToken = ResolveRefreshToken(dto?.RefreshToken);
+                if (string.IsNullOrWhiteSpace(refreshToken))
+                {
+                    return Unauthorized("Refresh token is required.");
+                }
+
+                var refreshResponse = await _authServices.RefreshAccessTokenAsync(refreshToken);
+                if (!refreshResponse.Success)
+                {
+                    ClearAuthCookies();
+                    return Unauthorized(refreshResponse.Message);
+                }
+
+                AppendAuthCookies(refreshResponse);
+                return Ok(refreshResponse);
+            }
+            catch
+            {
+                return StatusCode(500, "An error occured while refreshing the access token.");
+            }
+        }
+
+        [Authorize]
+        [HttpPatch("password")]
+        public async Task<IActionResult> UpdatePassword([FromBody] PasswordUpdateRequestDto dto)
+        {
+            if (!User.TryGetAuthenticatedUserId(out var uid))
+                return Unauthorized();
+
+            try
+            {
+                dto.UserID = uid;
 
                 var result = await _authServices.UpdatePasswordAsync(dto);
                 if (!result.Success)
@@ -117,6 +145,59 @@ namespace BattleGrid.API.Controllers
             {
                 return StatusCode(500, $"An error occured while updating password: {ex.Message}");
             }
+        }
+
+        private string? ResolveRefreshToken(string? bodyToken)
+        {
+            if (!string.IsNullOrWhiteSpace(bodyToken))
+            {
+                return bodyToken;
+            }
+
+            Request.Cookies.TryGetValue(RefreshTokenCookieName, out var cookieToken);
+            return cookieToken;
+        }
+
+        private void AppendAuthCookies(LoginResponseDto tokens)
+        {
+            var cookieBase = new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = Request.IsHttps,
+                SameSite = SameSiteMode.Lax,
+                Path = "/"
+            };
+
+            Response.Cookies.Append(
+                AccessTokenCookieName,
+                tokens.AccessToken,
+                new CookieOptions
+                {
+                    HttpOnly = cookieBase.HttpOnly,
+                    Secure = cookieBase.Secure,
+                    SameSite = cookieBase.SameSite,
+                    Path = cookieBase.Path,
+                    Expires = tokens.ATExpiresAt
+                });
+
+            Response.Cookies.Append(
+                RefreshTokenCookieName,
+                tokens.RefreshToken,
+                new CookieOptions
+                {
+                    HttpOnly = cookieBase.HttpOnly,
+                    Secure = cookieBase.Secure,
+                    SameSite = cookieBase.SameSite,
+                    Path = cookieBase.Path,
+                    Expires = tokens.RTExpiresAt
+                });
+        }
+
+        private void ClearAuthCookies()
+        {
+            var options = new CookieOptions { Path = "/" };
+            Response.Cookies.Delete(AccessTokenCookieName, options);
+            Response.Cookies.Delete(RefreshTokenCookieName, options);
         }
     }
 }

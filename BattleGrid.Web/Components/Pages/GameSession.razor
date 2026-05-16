@@ -6,6 +6,7 @@
 @inject ApiService Api
 @inject IJSRuntime JS
 @inject ActiveMatchSession MatchSession
+@inject ResumableMatchService Resumable
 @using Microsoft.AspNetCore.SignalR.Client
 @using Microsoft.AspNetCore.Components.Web
 @using Microsoft.JSInterop
@@ -13,7 +14,7 @@
 @using BattleGrid.Contracts.ResponseDtos
 @using BattleGrid.Contracts.RequestDtos
 
-<PageTitle>Match @MatchId — BattleGrid</PageTitle>
+<PageTitle>Match @MatchId - BattleGrid</PageTitle>
 
 @if (!Auth.IsInitialized)
 {
@@ -25,12 +26,24 @@ else if (!Auth.IsLoggedIn || string.IsNullOrEmpty(Auth.AccessToken))
 }
 else
 {
-    <div class="page-header">
-        <h1><span class="accent">◈</span> MATCH <span class="accent">#@MatchId</span></h1>
+    <div class="page-header page-header--match">
+        <div class="page-header-top">
+            <h1><span class="accent">◈</span> MATCH <span class="accent">#@MatchId</span></h1>
+            @if (!_postMatchPhase)
+            {
+                <button type="button"
+                        class="btn btn-sm btn-danger game-match-abandon-btn"
+                        disabled="@(_hub?.State != HubConnectionState.Connected)"
+                        title="Forfeit and leave this match"
+                        @onclick="ConfirmLeaveMatchAsync">
+                    Abandon Ship!
+                </button>
+            }
+        </div>
         <p class="muted">@PhaseSubtitle</p>
     </div>
 
-    @if (!_inBattle)
+    @if (!_postMatchPhase && !_inBattle)
     {
         <div class="placement-meta muted">
             @if (_placementDeadlineUtc is { } d)
@@ -48,16 +61,15 @@ else
                 </div>
                 <div class="card-body">
                     <div class="placement-toolbar">
-                        <span class="muted">Selected: <strong>@(SelectedShip?.ShipName ?? "—")</strong></span>
+                        <span class="muted">Selected: <strong>@(SelectedShip?.ShipName ?? "-")</strong></span>
                         <span class="muted">Orientation: <strong>@(PlacementVertical ? "Vertical" : "Horizontal")</strong></span>
                         <button type="button" class="btn btn-sm btn-outline" @onclick="ToggleRotation">Rotate</button>
-                        <span class="muted">Wire: bottom-left (0,0); X = column (A→0); Y = row from bottom (row 1→0). R / right-click · Pick ship · Place</span>
+                        <span class="muted">Pick ship · Right-click to rotate · Place</span>
                     </div>
                     @if (!string.IsNullOrEmpty(PlacementFeedback))
                     {
                         <p class="muted mt-sm">@PlacementFeedback</p>
                     }
-                    <div class="game-board-title">Columns @GridCoordinates.ColumnIndexToLetter(0)–@GridCoordinates.ColumnIndexToLetter(Board.GridSize - 1) (X=0..@(Board.GridSize - 1)), rows @GridCoordinates.DisplayRowNumberFromY(0)–@GridCoordinates.DisplayRowNumberFromY(Board.GridSize - 1) (Y=0..@(Board.GridSize - 1), bottom row = 1)</div>
                     <div class="battle-grid-frame battle-grid-frame--fit"
                          tabindex="0"
                          style="@(SelectedShip is not null ? "cursor: crosshair;" : null)"
@@ -177,10 +189,11 @@ else
             </div>
         </div>
     }
-    else
+
+    @if (_inBattle)
     {
         <div class="battle-hud muted">
-            Turn: <strong>@(_currentTurnPlayerId == Auth.CurrentUser?.UserID ? "YOUR SALVO" : "OPPONENT")</strong>
+            Turn: <strong class="@(_currentTurnPlayerId == Auth.CurrentUser?.UserID ? "turn-indicator turn-indicator--your-salvo" : "turn-indicator turn-indicator--opponent")">@(_currentTurnPlayerId == Auth.CurrentUser?.UserID ? "YOUR SALVO" : "OPPONENT")</strong>
             @if (_shotClockDeadlineUtc is { } sc)
             {
                 <span class="muted"> · Shot clock: <strong>@Math.Max(0, (int)Math.Ceiling((sc - DateTimeOffset.UtcNow).TotalSeconds))</strong>s</span>
@@ -198,7 +211,7 @@ else
                     <span class="card-label">YOUR FLEET</span>
                 </div>
                 <div class="card-body">
-                    <div class="game-board-title">Incoming fire on your ships</div>
+                    <div class="game-board-title">Your Fleet's Status</div>
                     <div class="battle-grid-frame battle-grid-frame--fit @(_postMatchPhase ? "battle-grid-frame--frozen" : null)" tabindex="0">
                         <div class="battle-grid">
                             @for (int visualRow = 0; visualRow < Board.GridSize; visualRow++)
@@ -228,13 +241,13 @@ else
                 </div>
             </div>
 
-            <div class="card game-board-card">
+            <div class="card game-board-card game-board-card--opponent">
                 <div class="card-header">
                     <span class="card-icon">◎</span>
                     <span class="card-label">TARGET GRID (OPPONENT)</span>
                 </div>
                 <div class="card-body">
-                    <div class="game-board-title">Click to fire when it is your turn (bottom-left origin; X,Y sent to server)</div>
+                    <div class="game-board-title">Possible Enemy Ship Locations</div>
                     <div class="battle-grid-frame battle-grid-frame--fit @(_postMatchPhase ? "battle-grid-frame--frozen" : null)" tabindex="0">
                         <div class="battle-grid">
                             @for (int visualRow = 0; visualRow < Board.GridSize; visualRow++)
@@ -264,35 +277,43 @@ else
                 </div>
             </div>
         </div>
-
-        @if (_postMatchPhase && _postMatchDeadlineUtc is { } pmd)
-        {
-            <div class="card post-match-card">
-                <div class="card-header">
-                    <span class="card-icon">⚑</span>
-                    <span class="card-label">MATCH RESULT</span>
-                </div>
-                <div class="card-body">
-                    @if (Auth.CurrentUser is { } me)
-                    {
-                        var won = _matchWinnerUserId == me.UserID;
-                        <p class="post-match-headline">@(won ? "Victory" : "Defeat")</p>
-                        <p class="muted">Winner: user #@_matchWinnerUserId</p>
-                        <p class="muted">Your rating change: <strong>@FormatSignedDelta(me.UserID == _player1Id ? _p1RatingDelta : _p2RatingDelta)</strong></p>
-                        <p class="muted">Return to dashboard in <strong>@Math.Max(0, (int)Math.Ceiling((pmd - DateTimeOffset.UtcNow).TotalSeconds))</strong>s or use the button.</p>
-                    }
-                    <button type="button" class="btn btn-primary btn-full mt-sm" @onclick="GoDashboardAsync">Go to dashboard</button>
-                </div>
-            </div>
-        }
     }
 
-    <div class="card game-hub-bar">
-        <div class="card-body">
-            <p class="muted">Live channel: <strong>@status</strong> · Last event: <strong>@lastEvent</strong></p>
-            <button type="button" class="btn btn-danger btn-full mt-sm" disabled="@(_postMatchPhase || _hub?.State != HubConnectionState.Connected)" @onclick="ConfirmLeaveMatchAsync">Leave match (forfeit)</button>
+    @if (_postMatchPhase && _postMatchDeadlineUtc is { } pmd)
+    {
+        <div class="card post-match-card">
+            <div class="card-header">
+                <span class="card-icon">⚑</span>
+                <span class="card-label">MATCH RESULT</span>
+            </div>
+            <div class="card-body">
+                @if (Auth.CurrentUser is { } me)
+                {
+                    @if (_matchWinnerUserId is { } winnerId)
+                    {
+                        var won = winnerId == me.UserID;
+                        <p class="post-match-headline @(won ? "post-match-headline--victory" : "post-match-headline--defeat")">@(won ? "Victory" : "Defeat")</p>
+                        <p class="muted">Winner: @GetWinnerDisplayLabel()</p>
+                        <p class="muted">Your rating change: <strong>@FormatSignedDelta(me.UserID == _player1Id ? _p1RatingDelta : _p2RatingDelta)</strong></p>
+                    }
+                    else
+                    {
+                        <p class="post-match-headline">Match ended</p>
+                        <p class="muted">No winner was recorded for this match.</p>
+                        <p class="muted">Your rating change: <strong>@FormatSignedDelta(me.UserID == _player1Id ? _p1RatingDelta : _p2RatingDelta)</strong></p>
+                    }
+                    <p class="muted">Return to dashboard in <strong>@Math.Max(0, (int)Math.Ceiling((pmd - DateTimeOffset.UtcNow).TotalSeconds))</strong>s or use the button.</p>
+                }
+                <button type="button" class="btn btn-primary btn-full mt-sm" @onclick="GoDashboardAsync">Go to dashboard</button>
+            </div>
         </div>
-    </div>
+    }
+
+    <footer class="game-session-status-bar muted" aria-live="polite">
+        <span>Live channel: <strong>@status</strong></span>
+        <span class="game-session-status-sep" aria-hidden="true">·</span>
+        <span>Last event: <strong>@lastEvent</strong></span>
+    </footer>
 }
 
 @code {
@@ -301,7 +322,7 @@ else
     [Parameter] public int MatchId { get; set; }
 
     string status = "Connecting…";
-    string lastEvent = "—";
+    string lastEvent = "-";
     HubConnection? _hub;
     bool _started;
 
@@ -315,6 +336,8 @@ else
 
     bool _postMatchPhase;
     int? _matchWinnerUserId;
+    string? _player1DisplayName;
+    string? _player2DisplayName;
     int _p1RatingDelta;
     int _p2RatingDelta;
     DateTimeOffset? _postMatchDeadlineUtc;
@@ -339,9 +362,11 @@ else
     readonly Dictionary<(int x, int y), string> _enemyIntel = new();
     readonly Dictionary<(int x, int y), string> _incomingOnOwn = new();
 
-    string PhaseSubtitle => _inBattle
-        ? "Battle phase — fire on the enemy grid only on your turn."
-        : "Ship placement phase";
+    string PhaseSubtitle => _postMatchPhase
+        ? "Match ended"
+        : _inBattle
+            ? "Battle Phase"
+            : "Ship Placement Phase";
 
     int TotalShipInstances => fleetManifest?.Sum(s => s.MaxPerPlayer) ?? 0;
 
@@ -350,6 +375,17 @@ else
     int PlacedShipCount => _placedCount.Values.Sum();
 
     static string FormatSignedDelta(int d) => d > 0 ? $"+{d}" : d.ToString();
+
+    string GetWinnerDisplayLabel()
+    {
+        if (_matchWinnerUserId is not { } w)
+            return "-";
+        if (w == _player1Id && !string.IsNullOrWhiteSpace(_player1DisplayName))
+            return _player1DisplayName!;
+        if (w == _player2Id && !string.IsNullOrWhiteSpace(_player2DisplayName))
+            return _player2DisplayName!;
+        return $"user #{w}";
+    }
 
     int Remaining(ShipTypeListResponseDto ship) =>
         ship.MaxPerPlayer - _placedCount.GetValueOrDefault(ship.ShipID);
@@ -382,6 +418,7 @@ else
         }
 
         _started = true;
+        await TryApplyMatchRecoveryFromApiAsync();
         await StartHubAsync();
         StateHasChanged();
     }
@@ -588,7 +625,7 @@ else
             _draftSyncCts?.Cancel();
             await _hub.InvokeAsync("UpdatePlacementDraft", _placementOrder.ToList());
             await _hub.InvokeAsync("ReadyWithPlacements", _placementOrder.ToList());
-            PlacementFeedback = "Placements submitted — waiting for opponent or timer.";
+            PlacementFeedback = "Placements submitted - waiting for opponent or timer.";
         }
         catch (Exception ex)
         {
@@ -676,6 +713,74 @@ else
             : "battle-cell battle-cell-fog";
     }
 
+    /// <summary>
+    /// After a Blazor-only restart, the API may have already finished the match and persisted results.
+    /// Clients miss the SignalR <c>MatchEnded</c> broadcast, so we hydrate post-match UI from the REST API.
+    /// </summary>
+    async Task TryApplyMatchRecoveryFromApiAsync()
+    {
+        var dto = await Api.GetMatchRecoveryIfTerminalAsync(MatchId);
+        if (dto is null)
+            return;
+
+        _player1Id = dto.Player1Id;
+        _player2Id = dto.Player2Id;
+        _player1DisplayName = dto.Player1UserName;
+        _player2DisplayName = dto.Player2UserName;
+        _matchWinnerUserId = dto.WinnerUserId;
+        _p1RatingDelta = dto.Player1RatingChange;
+        _p2RatingDelta = dto.Player2RatingChange;
+        _inBattle = dto.TotalNoOfMoves > 0;
+        _postMatchPhase = true;
+        _postMatchDeadlineUtc = DateTimeOffset.UtcNow.AddSeconds(45);
+        _placementDeadlineUtc = null;
+        _placementUiCts?.Cancel();
+        _draftSyncCts?.Cancel();
+        _draftSyncCts?.Dispose();
+        _draftSyncCts = null;
+        ResetShotUiTicker();
+        lastEvent = "Match ended (recovered from server)";
+        StartPostMatchCountdown();
+        await TryPlayMatchEndedSoundAsync(dto.WinnerUserId);
+    }
+
+    async Task TryPlayMatchEndedSoundAsync(int? winnerUserId)
+    {
+        try
+        {
+            if (Auth.CurrentUser is not { UserID: var me })
+                return;
+            if (winnerUserId is null)
+                return;
+            var fn = winnerUserId.Value == me ? "battleGridSounds.playMatchVictory" : "battleGridSounds.playMatchDefeat";
+            await JS.InvokeVoidAsync(fn);
+        }
+        catch
+        {
+            // ignore missing audio context (SSR / autoplay policy)
+        }
+    }
+
+    static bool IsShotHitResult(string result) =>
+        result.Equals("Hit", StringComparison.OrdinalIgnoreCase)
+        || result.Equals("Sunk", StringComparison.OrdinalIgnoreCase)
+        || result.Equals("Win", StringComparison.OrdinalIgnoreCase);
+
+    async Task TryPlayShotResultSoundAsync(string result)
+    {
+        try
+        {
+            if (IsShotHitResult(result))
+                await JS.InvokeVoidAsync("battleGridSounds.playShotHit");
+            else if (result.Equals("Miss", StringComparison.OrdinalIgnoreCase))
+                await JS.InvokeVoidAsync("battleGridSounds.playShotMiss");
+        }
+        catch
+        {
+            // ignore missing audio context (SSR / autoplay policy)
+        }
+    }
+
     async Task StartHubAsync()
     {
         var api = Config["ApiBaseUrl"]?.TrimEnd('/') ?? "http://localhost:4744";
@@ -751,10 +856,14 @@ else
                 StartShotClockCountdown();
             }
 
-            var suffix = msg.ForcedTimeout ? " (auto — open water)" : "";
+            var suffix = msg.ForcedTimeout ? " (auto - open water)" : "";
             ShotFeedback = $"Salvo {(msg.ShooterId == me ? "away" : "incoming")}: {msg.Result}{suffix}";
             lastEvent = $"Shot {msg.Result}";
-            return InvokeAsync(StateHasChanged);
+            return InvokeAsync(async () =>
+            {
+                await TryPlayShotResultSoundAsync(msg.Result);
+                StateHasChanged();
+            });
         });
 
         _hub.On<string>("ShotRejected", async reason =>
@@ -782,15 +891,28 @@ else
             if (msg is null)
                 return Task.CompletedTask;
 
+            _player1Id = msg.Player1Id;
+            _player2Id = msg.Player2Id;
+            _player1DisplayName = msg.Player1UserName;
+            _player2DisplayName = msg.Player2UserName;
             _postMatchPhase = true;
             _postMatchDeadlineUtc = msg.PostMatchDeadlineUtc;
             _matchWinnerUserId = msg.WinnerUserId;
             _p1RatingDelta = msg.Player1RatingChange;
             _p2RatingDelta = msg.Player2RatingChange;
+            _placementDeadlineUtc = null;
+            _placementUiCts?.Cancel();
+            _draftSyncCts?.Cancel();
+            _draftSyncCts?.Dispose();
+            _draftSyncCts = null;
             ResetShotUiTicker();
             StartPostMatchCountdown();
             lastEvent = "Match ended";
-            return InvokeAsync(StateHasChanged);
+            return InvokeAsync(async () =>
+            {
+                await TryPlayMatchEndedSoundAsync(msg.WinnerUserId);
+                StateHasChanged();
+            });
         });
 
         _hub.On<string>("MatchPersistFailed", msg =>
@@ -829,18 +951,16 @@ else
         {
             await InvokeAsync(async () =>
             {
-                MatchSession.LeaveMatch();
                 ResetShotUiTicker();
-                try
+                if (!_postMatchPhase)
+                    await TryApplyMatchRecoveryFromApiAsync();
+                if (_postMatchPhase)
+                    StateHasChanged();
+                else
                 {
-                    await JS.InvokeVoidAsync("battleGridMatchGuard.setActive", false);
+                    await LeaveMatchUiAsync();
+                    Nav.NavigateTo("/dashboard");
                 }
-                catch
-                {
-                    // ignore
-                }
-
-                Nav.NavigateTo("/dashboard");
             });
         });
 
@@ -1058,25 +1178,40 @@ else
         try
         {
             if (_hub is not null && _hub.State == HubConnectionState.Connected)
-                await _hub.InvokeAsync("ForfeitMatch", "User left match");
+                await _hub.InvokeAsync("ForfeitMatch", "AbandonShip");
+            else
+            {
+                lastEvent = "Not connected - cannot abandon right now.";
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
         }
         catch
         {
-            // still leave UI
+            lastEvent = "Could not abandon match. Check your connection.";
+            await InvokeAsync(StateHasChanged);
+            return;
         }
 
         ResetShotUiTicker();
-        MatchSession.LeaveMatch();
-        try
+
+        if (!_postMatchPhase)
+            await TryApplyMatchRecoveryFromApiAsync();
+
+        if (!_postMatchPhase)
         {
-            await JS.InvokeVoidAsync("battleGridMatchGuard.setActive", false);
-        }
-        catch
-        {
-            // ignore
+            for (var i = 0; i < 15 && !_postMatchPhase; i++)
+                await Task.Delay(100);
         }
 
-        Nav.NavigateTo("/dashboard");
+        if (!_postMatchPhase)
+        {
+            await LeaveMatchUiAsync();
+            Nav.NavigateTo("/dashboard");
+            return;
+        }
+
+        await InvokeAsync(StateHasChanged);
     }
 
     void StartPostMatchCountdown()
@@ -1103,16 +1238,7 @@ else
             await InvokeAsync(async () =>
             {
                 _postMatchPhase = false;
-                MatchSession.LeaveMatch();
-                try
-                {
-                    await JS.InvokeVoidAsync("battleGridMatchGuard.setActive", false);
-                }
-                catch
-                {
-                    // ignore
-                }
-
+                await LeaveMatchUiAsync();
                 Nav.NavigateTo("/dashboard");
             });
         }
@@ -1127,6 +1253,12 @@ else
         _postMatchUiCts?.Cancel();
         _postMatchPhase = false;
         ResetShotUiTicker();
+        await LeaveMatchUiAsync();
+        Nav.NavigateTo("/dashboard");
+    }
+
+    async Task LeaveMatchUiAsync()
+    {
         MatchSession.LeaveMatch();
         try
         {
@@ -1137,7 +1269,7 @@ else
             // ignore
         }
 
-        Nav.NavigateTo("/dashboard");
+        await Resumable.RefreshAsync();
     }
 
     void OnAuthChanged()
@@ -1185,15 +1317,7 @@ else
         _postMatchUiCts?.Dispose();
         _postMatchUiCts = null;
         ResetShotUiTicker();
-        MatchSession.LeaveMatch();
-        try
-        {
-            await JS.InvokeVoidAsync("battleGridMatchGuard.setActive", false);
-        }
-        catch
-        {
-            // ignore
-        }
+        await LeaveMatchUiAsync();
 
         if (_hub is not null)
             await _hub.DisposeAsync();

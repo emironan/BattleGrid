@@ -10,6 +10,6 @@ public sealed class Session
     public DateTimeOffset AT_ExpiresAt { get; set; }
     public DateTimeOffset LastLogin { get; set; }
     public bool IsRevoked { get; set; } = false;
-    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow.ToUniversalTime();
     public DateTimeOffset? LastUpdatedAt { get; set; }
 }

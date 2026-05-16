@@ -10,8 +10,8 @@ public sealed class Match
     public int? P1RatingChange { get; set; }
     public int? P2RatingChange { get; set; }
     public MatchStatus Status { get; set; } = MatchStatus.Loading;
-    public int TotalNoOfTurns { get; set; } = 0;
+    public int TotalNoOfMoves { get; set; } = 0;
     public string? FinishReason { get; set; }
-    public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset StartedAt { get; set; } = DateTimeOffset.UtcNow.ToUniversalTime();
     public DateTimeOffset? FinishedAt { get; set; }
 }
