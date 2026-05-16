@@ -5,7 +5,8 @@ namespace BattleGrid.Contracts.RequestDtos
 {
     public class RegisterRequestDto
     {
-        public string? UserName { get; set; }
+        [Required]
+        public string UserName { get; set; } = string.Empty;
 
         [Required]
         public string Email { get; set; } = string.Empty;
@@ -47,5 +48,10 @@ namespace BattleGrid.Contracts.RequestDtos
 
         [Required]
         public string NewPassword { get; set; } = string.Empty;
+    }
+
+    public class RefreshTokenRequestDto
+    {
+        public string? RefreshToken { get; set; }
     }
 }

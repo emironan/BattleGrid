@@ -6,6 +6,6 @@ public sealed class Spectator
 {
     public int SpectatorID { get; set; }
     public int MatchID { get; set; }
-    public DateTimeOffset JoinedAt { get; set; } = DateTimeOffset.UtcNow;
+    public DateTimeOffset JoinedAt { get; set; } = DateTimeOffset.UtcNow.ToUniversalTime();
     public DateInterval Duration { get; set; } = DateInterval.Minute;
 }

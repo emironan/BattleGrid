@@ -1,0 +1,39 @@
+.queue-live-stats {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+    display: grid;
+    gap: 1rem;
+}
+
+.queue-stat-block {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.queue-stat-label {
+    font-size: 0.7rem;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+    text-transform: uppercase;
+}
+
+.queue-stat-value {
+    font-family: var(--font);
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--accent);
+    text-shadow: 0 0 12px var(--border-glow);
+}
+
+.queue-range-hint {
+    font-size: 0.85rem;
+    color: var(--text);
+    line-height: 1.45;
+}
+
+.queue-range-hint strong {
+    color: var(--accent);
+    font-weight: 600;
+}

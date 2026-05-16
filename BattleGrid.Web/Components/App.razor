@@ -1,4 +1,6 @@
 ﻿@inject AuthStateService Auth
+@inject QueueMatchmakingService Matchmaking
+@inject ResumableMatchService Resumable
 
 <Router AppAssembly="@typeof(App).Assembly">
     <Found Context="routeData">
@@ -6,7 +8,7 @@
         <FocusOnNavigate RouteData="@routeData" Selector="h1" />
     </Found>
     <NotFound>
-        <PageTitle>Not Found — BattleGrid</PageTitle>
+        <PageTitle>Not Found - BattleGrid</PageTitle>
         <LayoutView Layout="@typeof(MainLayout)">
             <div class="not-found-page">
                 <div class="radar-ping"></div>
@@ -21,8 +23,11 @@
 @code {
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender) return;
         await Auth.InitializeAsync();
-        StateHasChanged();
+        if (Auth.IsLoggedIn)
+            await Resumable.RefreshAsync();
+        await Matchmaking.TryResumeFromStoredIntentAsync();
+        if (firstRender)
+            StateHasChanged();
     }
 }

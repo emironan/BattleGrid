@@ -1,0 +1,38 @@
+@page "/game"
+@inject AuthStateService Auth
+@inject ResumableMatchService Resumable
+
+<PageTitle>Game - BattleGrid</PageTitle>
+
+<div class="page-header">
+    <h1><span class="accent">◈</span> GAME</h1>
+    <p class="muted">Open a match from the queue after you are paired.</p>
+</div>
+<div class="card" style="max-width: 36rem;">
+    <div class="card-body quick-actions">
+        @if (Auth.IsLoggedIn && Resumable.HasResumableMatch && Resumable.MatchId is int mid)
+        {
+            <a href="/game/@mid" class="btn btn-primary btn-full">Rejoin match #@mid</a>
+        }
+        else
+        {
+            <a href="/queue" class="btn btn-primary btn-full">Find a match</a>
+        }
+        <a href="/dashboard" class="btn btn-outline btn-full">Dashboard</a>
+    </div>
+</div>
+
+@code {
+    bool _loaded;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _loaded)
+            return;
+        _loaded = true;
+        await Auth.InitializeAsync();
+        if (Auth.IsLoggedIn)
+            await Resumable.RefreshAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+}

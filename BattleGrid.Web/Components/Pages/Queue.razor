@@ -1,0 +1,125 @@
+﻿@page "/queue"
+@implements IDisposable
+@inject AuthStateService Auth
+@inject NavigationManager Nav
+@inject QueueMatchmakingService Matchmaking
+@inject ResumableMatchService Resumable
+
+<PageTitle>Matchmaking - BattleGrid</PageTitle>
+
+@if (!Auth.IsInitialized)
+{
+    <div class="loading-screen"><p class="muted">Restoring session…</p></div>
+}
+else if (!Auth.IsLoggedIn || string.IsNullOrEmpty(Auth.AccessToken))
+{
+    <div class="loading-screen"><p class="muted">Redirecting to login…</p></div>
+}
+else
+{
+    <div class="page-header">
+        <h1><span class="accent">◈</span> MATCH QUEUE</h1>
+        <p class="muted">@Matchmaking.Status</p>
+    </div>
+    <div class="card card-accent" style="max-width: 42rem;">
+        <div class="card-body">
+
+            @if (Matchmaking.IsInQueue && Matchmaking.QueueStartedUtc is not null && Matchmaking.QueueMatchmakingRating is { } queueRating)
+            {
+                var elapsed = Matchmaking.GetQueueElapsed();
+                var half = GetRatingHalfWindow(elapsed);
+                <div class="queue-live-stats">
+                    <div class="queue-stat-block">
+                        <span class="queue-stat-label">Time in queue</span>
+                        <span class="queue-stat-value">@QueueMatchmakingService.FormatWaitClock(elapsed)</span>
+                    </div>
+                    <div class="queue-stat-block">
+                        <span class="queue-stat-label">Rating search window</span>
+                        <span class="queue-stat-value">@queueRating ± @half</span>
+                    </div>
+                </div>
+            }
+
+            <p class="muted" style="font-size: 0.85rem;">
+                You can browse other pages while you are in the queue.
+            </p>
+
+            <button type="button" class="btn btn-outline btn-full mt-sm" @onclick="LeaveQueueAndGoDashboardAsync">
+                Stop Queueing
+            </button>
+        </div>
+    </div>
+}
+
+@code {
+    private static readonly TimeSpan RatingWindowStep = TimeSpan.FromSeconds(30);
+    private const int RatingInitialHalfWindow = 200;
+    private const int RatingWindowGrowthPerStep = 200;
+    private const int RatingMaxHalfWindow = 1000;
+
+    bool _started;
+
+    protected override void OnInitialized()
+    {
+        Auth.OnChange += OnAuthChanged;
+        Matchmaking.OnStateChanged += OnMatchmakingStateChanged;
+        if (Auth.IsInitialized && (!Auth.IsLoggedIn || string.IsNullOrEmpty(Auth.AccessToken)))
+            Nav.NavigateTo("/login");
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender || _started) return;
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn || string.IsNullOrEmpty(Auth.AccessToken))
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        _started = true;
+        await Resumable.RefreshAsync();
+        if (Resumable.MatchId is int mid)
+        {
+            Nav.NavigateTo($"/game/{mid}");
+            return;
+        }
+
+        await Matchmaking.EnsureStartedAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    static int GetRatingHalfWindow(TimeSpan elapsedInQueue)
+    {
+        if (elapsedInQueue < TimeSpan.Zero)
+            elapsedInQueue = TimeSpan.Zero;
+
+        var periods = (int)Math.Floor(elapsedInQueue.TotalSeconds / RatingWindowStep.TotalSeconds);
+        var half = RatingInitialHalfWindow + periods * RatingWindowGrowthPerStep;
+        return Math.Min(RatingMaxHalfWindow, half);
+    }
+
+    async Task LeaveQueueAndGoDashboardAsync()
+    {
+        await Matchmaking.LeaveQueueAsync();
+        Nav.NavigateTo("/dashboard");
+    }
+
+    void OnAuthChanged()
+    {
+        _ = InvokeAsync(async () =>
+        {
+            if (Auth.IsInitialized && (!Auth.IsLoggedIn || string.IsNullOrEmpty(Auth.AccessToken)))
+                Nav.NavigateTo("/login");
+            await InvokeAsync(StateHasChanged);
+        });
+    }
+
+    void OnMatchmakingStateChanged() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Auth.OnChange -= OnAuthChanged;
+        Matchmaking.OnStateChanged -= OnMatchmakingStateChanged;
+    }
+}

@@ -1,9 +1,13 @@
 @page "/dashboard"
-@implements IDisposable
+@implements IAsyncDisposable
 @inject AuthStateService Auth
 @inject NavigationManager Nav
+@inject ApiService Api
+@inject QueueMatchmakingService Matchmaking
+@inject ResumableMatchService Resumable
+@inject IJSRuntime JS
 
-<PageTitle>Dashboard — BattleGrid</PageTitle>
+<PageTitle>Dashboard - BattleGrid</PageTitle>
 
 @if (!Auth.IsInitialized)
 {
@@ -38,7 +42,7 @@ else
                     </tr>
                     <tr>
                         <td class="info-key">USERNAME</td>
-                        <td class="info-val">@(Auth.CurrentUser.UserName ?? "—")</td>
+                        <td class="info-val">@ResolveShownUsername()</td>
                     </tr>
                     <tr>
                         <td class="info-key">EMAIL</td>
@@ -76,28 +80,50 @@ else
 
         <div class="card">
             <div class="card-header">
-                <span class="card-icon">🔑</span>
-                <span class="card-label">SESSION TOKENS</span>
+                <span class="card-icon">📊</span>
+                <span class="card-label">PLAYER SEASON STATS</span>
             </div>
             <div class="card-body">
-                <table class="info-table">
-                    <tr>
-                        <td class="info-key">ACCESS TOKEN</td>
-                        <td class="info-val token-preview">@TruncateToken(Auth.AccessToken)</td>
-                    </tr>
-                    <tr>
-                        <td class="info-key">AT EXPIRES</td>
-                        <td class="info-val">@FormatExpiry(Auth.AccessTokenExpiry)</td>
-                    </tr>
-                    <tr>
-                        <td class="info-key">REFRESH TOKEN</td>
-                        <td class="info-val token-preview">@TruncateToken(Auth.RefreshToken)</td>
-                    </tr>
-                    <tr>
-                        <td class="info-key">RT EXPIRES</td>
-                        <td class="info-val">@FormatExpiry(Auth.RefreshTokenExpiry)</td>
-                    </tr>
-                </table>
+                @if (!_seasonStatsLoaded)
+                {
+                    <p class="muted">Loading season stats…</p>
+                }
+                else if (_seasonStatsError is { } err)
+                {
+                    <p class="muted">@err</p>
+                }
+                else if (_seasonStats is { } s)
+                {
+                    <table class="info-table">
+                        <tr>
+                            <td class="info-key">SEASON</td>
+                            <td class="info-val">#@s.SeasonNo</td>
+                        </tr>
+                        <tr>
+                            <td class="info-key">RATING</td>
+                            <td class="info-val">@s.Rating <span class="muted">(season peak @s.HighestRating)</span></td>
+                        </tr>
+                        <tr>
+                            <td class="info-key">MATCHES</td>
+                            <td class="info-val">@s.MatchesPlayed played · @s.MatchesWon won · @(s.MatchesPlayed - s.MatchesWon) lost</td>
+                        </tr>
+                        <tr>
+                            <td class="info-key">WIN RATE</td>
+                            <td class="info-val">@s.WinRate.ToString("0.##")%</td>
+                        </tr>
+                        @if (s.LastUpdatedAt is { } lu)
+                        {
+                            <tr>
+                                <td class="info-key">LAST UPDATED</td>
+                                <td class="info-val muted">@lu.UtcDateTime.ToString("yyyy-MM-dd HH:mm UTC")</td>
+                            </tr>
+                        }
+                    </table>
+                }
+                else
+                {
+                    <p class="muted">No season stats available.</p>
+                }
             </div>
         </div>
 
@@ -107,6 +133,23 @@ else
                 <span class="card-label">QUICK ACTIONS</span>
             </div>
             <div class="card-body quick-actions">
+                @if (Resumable.HasResumableMatch && Resumable.MatchId is int mid)
+                {
+                    <p class="muted">You have a match in progress - rejoin to continue.</p>
+                    <a href="/game/@mid" class="btn btn-primary btn-full">REJOIN MATCH #@mid</a>
+                }
+                else
+                {
+                    <a href="/queue" class="btn btn-primary btn-full">FIND A MATCH</a>
+                }
+                @if (!Resumable.HasResumableMatch && Matchmaking.IsInQueue)
+                {
+                    <p class="muted mt-sm" style="font-size: 1rem;">
+                        In matchmaking · @QueueMatchmakingService.FormatWaitClock(Matchmaking.GetQueueElapsed())
+                    </p>
+                    <button type="button" class="btn btn-danger btn-full mt-sm" @onclick="LeaveQueueFromDashboardAsync">LEAVE QUEUE</button>
+                }
+                <a href="/match-history" class="btn btn-outline btn-full mt-sm">MATCH HISTORY</a>
                 <a href="/users" class="btn btn-outline btn-full">VIEW ALL OPERATORS</a>
                 <a href="/shiptypes" class="btn btn-outline btn-full">VIEW FLEET REGISTRY</a>
                 <a href="http://localhost:4744/swagger" target="_blank" class="btn btn-outline btn-full">OPEN API DOCS ↗</a>
@@ -116,18 +159,69 @@ else
     </div>
 }
 
+@using Microsoft.JSInterop
+
 @code {
+    bool _pageDataLoaded;
+    string? _cachedUsernameFromStorage;
+    PlayerSeasonStatsResponseDto? _seasonStats;
+    bool _seasonStatsLoaded;
+    string? _seasonStatsError;
+
     protected override void OnInitialized()
     {
         Auth.OnChange += OnAuthChanged;
+        Matchmaking.OnStateChanged += OnMatchmakingChanged;
+        Resumable.OnChange += OnResumableChanged;
         if (Auth.IsInitialized && !Auth.IsLoggedIn)
             Nav.NavigateTo("/login");
     }
 
-    protected override void OnAfterRender(bool firstRender)
+    void OnMatchmakingChanged() => _ = InvokeAsync(StateHasChanged);
+
+    void OnResumableChanged() => _ = InvokeAsync(StateHasChanged);
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (Auth.IsInitialized && !Auth.IsLoggedIn)
+        if (!firstRender || _pageDataLoaded)
+            return;
+
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn)
+        {
             Nav.NavigateTo("/login");
+            return;
+        }
+
+        _pageDataLoaded = true;
+        await Resumable.RefreshAsync();
+
+        var stats = await Api.GetMyCurrentSeasonStatsAsync();
+        _seasonStatsLoaded = true;
+        if (stats is null)
+        {
+            _seasonStats = null;
+            _seasonStatsError = "Could not load season stats. Is the API running?";
+        }
+        else
+        {
+            _seasonStats = stats;
+            _seasonStatsError = null;
+        }
+
+        if (Auth.CurrentUser is { } u)
+        {
+            try
+            {
+                _cachedUsernameFromStorage = await JS.InvokeAsync<string?>("battleGridProfile.getUserName", u.UserID);
+            }
+            catch
+            {
+                _cachedUsernameFromStorage = null;
+            }
+        }
+
+        StateHasChanged();
     }
 
     private async void OnAuthChanged()
@@ -145,30 +239,34 @@ else
         });
     }
 
+    async Task LeaveQueueFromDashboardAsync()
+    {
+        await Matchmaking.LeaveQueueAsync();
+        StateHasChanged();
+    }
+
     async Task Logout()
     {
         await Auth.LogoutAsync();
         Nav.NavigateTo("/");
     }
 
-    string TruncateToken(string? token)
+    string ResolveShownUsername()
     {
-        if (string.IsNullOrEmpty(token)) return "—";
-        return token.Length > 24 ? token[..24] + "..." : token;
+        if (Auth.CurrentUser is null)
+            return "-";
+        if (!string.IsNullOrWhiteSpace(Auth.CurrentUser.UserName))
+            return Auth.CurrentUser.UserName;
+        if (!string.IsNullOrWhiteSpace(_cachedUsernameFromStorage))
+            return _cachedUsernameFromStorage!;
+        return "-";
     }
 
-    string FormatExpiry(DateTimeOffset? expiry)
-    {
-        if (expiry == null) return "—";
-        var remaining = expiry.Value - DateTimeOffset.UtcNow;
-        if (remaining <= TimeSpan.Zero) return "EXPIRED";
-        if (remaining.TotalDays >= 1)
-            return $"{expiry.Value:yyyy-MM-dd HH:mm} UTC ({(int)remaining.TotalDays}d remaining)";
-        return $"{expiry.Value:HH:mm:ss} UTC ({(int)remaining.TotalMinutes}m remaining)";
-    }
-
-    public void Dispose()
+    public ValueTask DisposeAsync()
     {
         Auth.OnChange -= OnAuthChanged;
+        Matchmaking.OnStateChanged -= OnMatchmakingChanged;
+        Resumable.OnChange -= OnResumableChanged;
+        return ValueTask.CompletedTask;
     }
 }

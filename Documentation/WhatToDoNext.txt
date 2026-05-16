@@ -4,7 +4,7 @@
 
 [+] : Any objective partially completed
 
-[] or [-] : Did not start this objective as of now
+[ ] : Did not start this objective as of now
 
 
 [✔] 1 - Main DB table structure is done
@@ -22,13 +22,13 @@
 
 [+] 3 - Create the backend/server, complete with all the services, interfaces and controllers
 	[✓] 3.1 - Implement the entities and models in backend to represent the DB tables
-	[+] 3.2 - Implement AuthServices to handle session-related operations (user registration and login etc)
+	[✓] 3.2 - Implement AuthServices to handle session-related operations (user registration and login etc)
 	[+]	3.2 - Implement UserServices to handle user-related operations
-	[+]	3.3 - Implement ShipTypeServices
-	[+]	3.4 - Implement ShipPlacementServices
-	[+]	3.5 - Implement MatchServices
+	[✓]	3.3 - Implement ShipTypeServices
+	[✓]	3.4 - Implement ShipPlacementServices
+	[✓]	3.5 - Implement MatchServices
 	[+]	3.6 - Implement AdminServices
-	[+] 3.7 - Implement ReplayServices
+	[✓] 3.7 - Implement ReplayServices
 	[✓] 3.8 - JwtHelper for Access and Refresh tokens
 		 .
 		 .
@@ -36,8 +36,7 @@
 
 [✔] 4 - Implement game logic. It can be found in Domain/GameLogic
 	[✓] 4.1 - Coordinate, Cell and CellState
-	[✓] 4.2 - ShipPlacementHelper. Holds the list of coordinates that have a ship on it
-	Also, checks for out of bound ship placement
+	[✓] 4.2 - ShipPlacementHelper. Checks for out of bound ship placement
 	[✓] 4.3 - Board, consisting of cells. Supports placing ships and firing shots on it
 	[✓] 4.4 - GameState. Accepts 2 players, a board for each player. Manages turn etc.
 
@@ -45,17 +44,20 @@
 	[✓] 5.1 - Landing page
 	[✓] 5.2 - Login and Register pages
 	[+] 5.3 - Dashboard page after login
-	[]	5.4 - Admin panel page
-	[]	5.5 - A queue button/page
-	[]	5.6 - Game page for the actual gameplay
-	[]	5.7 - Leaderboard page
-	[]	5.8 - Match History page
-	[]  5.9 - Match replay capability
+	[+]	5.4 - Admin panel page
+	[+]	5.5 - A queue button/page
+		[✓]  5.5.1 - Users should be able to move freely between pages while they are in queue.
+		[+]  5.5.2 - 'Find a match' button should turn into 'Cancel matchmaking' while hte user is already in queue.
+	[✓]	5.6 - Game page for the actual gameplay
+	[ ]	5.7 - Leaderboard page
+	[✓]	5.8 - Match History page
+	[✓] 5.9 - Match replay capability
+	[+] 5.10 - Clean-up the UI. Remove debug texts, remove testing pages like /users etc.
 
-[] 6 - Implement SignalR
-	[] 6.1 - Queue Hub. A single hub for all the players
-	[] 6.2 - Matchmaking Logic based on Ranking and time elapsed in queue for a player
-	[] 6.3 - Game Hub. A new instance for every matched player duo.
-	[] 6.4 - Keep ship placements in memory until both players are done, then save it all to DB at once
-	[] 6.5 - Keep player moves (shots) in memory until the game is over, then save it all to DB at once
-	[] 6.6 - Ranking change logic after a game is over
+[+] 6 - Implement SignalR
+	[✓] 6.1 - Queue Hub. A single hub for all the players
+	[✓] 6.2 - Matchmaking Logic based on Ranking and time elapsed in queue for a player
+	[✓] 6.3 - Game Hub. A new instance for every matched player duo
+	[✓] 6.4 - Keep ship placements in memory until both players are done, then save it all to DB at once
+	[✓] 6.5 - Keep player moves (shots) in memory until the game is over, then save it all to DB at once
+	[✓] 6.6 - Ranking change logic after a game is over. It is mainly based on ranking difference

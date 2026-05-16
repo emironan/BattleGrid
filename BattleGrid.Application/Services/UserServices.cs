@@ -86,43 +86,6 @@ namespace BattleGrid.Application.Services
             return userNew.PasswordHash;
         }
 
-        public async Task<GeneralResponseDto> UserUpdateBySystemAsync(UserUpdateSystemRequestDto dto)
-        {
-            var user = await _context.User
-                .Where(u => u.UserID == dto.UserID)
-                .FirstOrDefaultAsync();
-
-            if (user == null)
-            {
-                return new GeneralResponseDto
-                {
-                    Success = false,
-                    Message = "User not found!"
-                };
-            }
-
-            if (!string.IsNullOrWhiteSpace(dto.UserName))
-            {
-                user.UserName = dto.UserName;   // If dto has a non-null UserName field, update the username, otherwise leave it as is
-                user.UpdateReason = "User name is updated by the system.";
-            }
-            if (dto.BanLifted == true && user.IsBanned == true)
-            { 
-                user.IsBanned = false;          // If BanLifted is true, IsBanned will be set to false to un-ban the player
-                user.UpdateReason = "User's ban is lifted by the system.";
-            }
-
-            user.LastUpdatedAt = DateTimeOffset.UtcNow.ToUniversalTime();
-
-            await _context.SaveChangesAsync();
-
-            return new GeneralResponseDto
-            {
-                Success = true,
-                Message = "User info updated successfuly"
-            };
-        }
-
         //aaa TODO: UserUpdateByUserAsync
         //aaa TODO: UserUpdateByAdminAsync
 

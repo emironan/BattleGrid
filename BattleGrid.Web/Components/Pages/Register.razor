@@ -2,7 +2,7 @@
 @inject ApiService Api
 @inject NavigationManager Nav
 
-<PageTitle>Register — BattleGrid</PageTitle>
+<PageTitle>Register - BattleGrid</PageTitle>
 
 <div class="auth-page">
     <div class="auth-card">
@@ -29,7 +29,7 @@
 
             <EditForm Model="model" OnValidSubmit="HandleRegister">
                 <div class="form-group">
-                    <label class="form-label">USERNAME <span class="muted">(optional)</span></label>
+                    <label class="form-label">USERNAME <span class="required">*</span></label>
                     <input class="form-control" placeholder="e.g. Captain_Zero" @bind="model.UserName" />
                     <small class="form-hint">Letters, numbers, and underscores only</small>
                 </div>
@@ -79,6 +79,11 @@
     {
         errorMessage = string.Empty;
 
+        if (string.IsNullOrWhiteSpace(model.UserName))
+        {
+            errorMessage = "User name is required.";
+            return;
+        }
         if (string.IsNullOrWhiteSpace(model.Email))
         {
             errorMessage = "Email is required.";

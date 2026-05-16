@@ -5,19 +5,20 @@
 -- Create a trigger function to validate ship placement
 CREATE OR REPLACE FUNCTION validate_ship_placement() RETURNS TRIGGER AS $$
     BEGIN
-        -- Validate proper placement within bounds
-        IF NEW."StartX" < 0 OR NEW."StartX" >= 10 OR NEW."StartY" < 0 OR NEW."StartY" >= 10 THEN
+        -- Bounds: coordinates are 0..9 with origin bottom-left (same as app). Extent uses Length on primary axis and Width on secondary (matches ShipPlacementHelper).
+        IF NEW."StartX" < 0 OR NEW."StartY" < 0 THEN
             RAISE EXCEPTION 'Ship placement is out of bounds';
         END IF;
 
-        -- Validate proper placement based on orientation and ship length
         IF NEW."IsVertical" THEN
-            IF (NEW."StartY" + (SELECT "Length" FROM "ShipType" WHERE "ShipID" = NEW."ShipID")) >= 10 THEN
-                RAISE EXCEPTION 'Ship placement exceeds vertical bounds';
+            IF NEW."StartX" + (SELECT "Width" FROM "ShipType" WHERE "ShipID" = NEW."ShipID") > 10
+               OR NEW."StartY" + (SELECT "Length" FROM "ShipType" WHERE "ShipID" = NEW."ShipID") > 10 THEN
+                RAISE EXCEPTION 'Ship placement is out of bounds';
             END IF;
         ELSE
-            IF (NEW."StartX" + (SELECT "Length" FROM "ShipType" WHERE "ShipID" = NEW."ShipID")) >= 10 THEN
-                RAISE EXCEPTION 'Ship placement exceeds horizontal bounds';
+            IF NEW."StartX" + (SELECT "Length" FROM "ShipType" WHERE "ShipID" = NEW."ShipID") > 10
+               OR NEW."StartY" + (SELECT "Width" FROM "ShipType" WHERE "ShipID" = NEW."ShipID") > 10 THEN
+                RAISE EXCEPTION 'Ship placement is out of bounds';
             END IF;
         END IF;
 
