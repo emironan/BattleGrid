@@ -2,12 +2,20 @@ using BattleGrid.Contracts.RequestDtos;
 
 namespace BattleGrid.Contracts.ResponseDtos;
 
+public sealed class GridCellDto
+{
+    public int X { get; set; }
+    public int Y { get; set; }
+}
+
 public sealed class ShotFiredMessage
 {
     public int ShooterId { get; set; }
     public int X { get; set; }
     public int Y { get; set; }
     public string Result { get; set; } = "";
+    /// <summary>All cells of the ship that just sank (target board only). Does not reveal other ships.</summary>
+    public List<GridCellDto>? SunkCells { get; set; }
     public int CurrentTurnPlayerId { get; set; }
     public string Phase { get; set; } = "";
     public bool ForcedTimeout { get; set; }
@@ -104,6 +112,8 @@ public sealed class YourBattleSnapshotMessage
     public int CurrentTurnPlayerId { get; set; }
     public string Phase { get; set; } = "";
     public List<FleetLayoutCellDto>? OwnFleet { get; set; }
+    /// <summary>Authoritative ship rectangles for hull rendering after reconnect.</summary>
+    public List<PlacedShipDto>? Placements { get; set; }
     public List<ShotIntelDto>? MyOutgoing { get; set; }
     public List<ShotIntelDto>? IncomingOnOwn { get; set; }
     public DateTimeOffset ShotClockDeadlineUtc { get; set; }

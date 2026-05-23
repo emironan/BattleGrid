@@ -20,7 +20,10 @@
         {
             <NavLink href="/" class="nav-link" Match="NavLinkMatch.All">HOME</NavLink>
             <NavLink href="/shiptypes" class="nav-link">FLEET</NavLink>
-            <NavLink href="/users" class="nav-link">PERSONNEL</NavLink>
+            @if (Auth.CurrentUser?.IsAdmin == true)
+            {
+                <NavLink href="/users" class="nav-link">PERSONNEL</NavLink>
+            }
         }
 
         @if (Auth.IsLoggedIn)

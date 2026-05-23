@@ -828,6 +828,7 @@ public sealed class InMemoryMatchGameService
         private async Task SendBattleSnapshotToClientAsync(GameState game, int userId, string connectionId)
         {
             List<object> ownFleet;
+            List<PlacedShipDto> placements;
             List<object> outgoing;
             List<object> incoming;
             DateTimeOffset deadline;
@@ -835,6 +836,7 @@ public sealed class InMemoryMatchGameService
             {
                 var byId = _fleet!.ToDictionary(s => s.ShipID);
                 var list = userId == _player1Id ? _p1FinalPlacements : _p2FinalPlacements;
+                placements = list.ToList();
                 ownFleet = ExpandPlacementCellsToShipTypeIds(list, byId);
                 outgoing = new List<object>();
                 incoming = new List<object>();
@@ -864,6 +866,7 @@ public sealed class InMemoryMatchGameService
                 currentTurnPlayerId = game.CurrentTurnPlayerId,
                 phase = game.Phase.ToString(),
                 ownFleet,
+                placements,
                 myOutgoing = outgoing,
                 incomingOnOwn = incoming,
                 shotClockDeadlineUtc = deadline
@@ -1013,12 +1016,15 @@ public sealed class InMemoryMatchGameService
                 shotClockDeadlineUtc = _shotClockDeadlineUtc;
 
             string clientResult;
+            List<object>? sunkCells = null;
             lock (_gate)
             {
                 var g = _game;
                 clientResult = g is null
                     ? result.ToString()
                     : ToClientShotResult(result, g, userId, targetX, targetY);
+                if (g is not null)
+                    sunkCells = TryBuildSunkCellsPayload(g, userId, targetX, targetY, clientResult);
             }
 
             await _hubContext.Clients.Group(InMemoryMatchGameService.GroupName(_matchId)).SendAsync("ShotFired", new
@@ -1027,6 +1033,7 @@ public sealed class InMemoryMatchGameService
                 x = targetX,
                 y = targetY,
                 result = clientResult,
+                sunkCells,
                 currentTurnPlayerId = broadcastTurn,
                 phase = broadcastPhase,
                 forcedTimeout,
@@ -1312,6 +1319,21 @@ public sealed class InMemoryMatchGameService
                 return "Miss";
 
             return game.GetPlayerBoard(defenderUserId).GetCellState(x, y) == CellState.Sunk ? "Sunk" : "Hit";
+        }
+
+        static List<object>? TryBuildSunkCellsPayload(GameState game, int shooterId, int x, int y, string clientResult)
+        {
+            if (clientResult is not ("Sunk" or "Win"))
+                return null;
+
+            var opponentId = shooterId == game.Player1Id ? game.Player2Id : game.Player1Id;
+            var board = game.GetPlayerBoard(opponentId);
+            if (!board.TryGetShipIdAt(x, y, out var shipId))
+                return null;
+
+            return board.GetCoordinatesForShip(shipId)
+                .Select(c => (object)new { x = c.X, y = c.Y })
+                .ToList();
         }
     }
 }

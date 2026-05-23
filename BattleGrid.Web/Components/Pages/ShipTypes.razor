@@ -1,4 +1,6 @@
 @page "/shiptypes"
+@using BattleGrid.Contracts.ResponseDtos
+@using BattleGrid.Web.GameVisuals
 @inject ApiService Api
 
 <PageTitle>Fleet Registry - BattleGrid</PageTitle>
@@ -36,44 +38,48 @@ else
                     <span class="ship-id muted">#@ship.ShipID</span>
                 </div>
 
-                <div class="ship-visual">
-                    @for (int i = 0; i < ship.Length; i++)
-                    {
-                        <div class="ship-cell @(i == 0 ? "cell-bow" : i == ship.Length - 1 ? "cell-stern" : "cell-mid")"></div>
-                    }
-                </div>
-
-                <div class="ship-stats">
-                    <div class="stat">
-                        <span class="stat-label">LENGTH</span>
-                        <span class="stat-value">@ship.Length</span>
-                    </div>
-                    <div class="stat">
-                        <span class="stat-label">WIDTH</span>
-                        <span class="stat-value">@ship.Width</span>
-                    </div>
-                    <div class="stat">
-                        <span class="stat-label">MAX / PLAYER</span>
-                        <span class="stat-value">@ship.MaxPerPlayer</span>
-                    </div>
-                    <div class="stat">
-                        <span class="stat-label">GRID CELLS</span>
-                        <span class="stat-value">@(ship.Length * ship.Width)</span>
+                <div class="ship-card-hull-area">
+                    <div class="ship-dock-visual">
+                        <div class="ship-dock-hull-slot" style="--dock-hull-cells: @ship.Length">
+                            <div class="ship-dock-hull"
+                                 style="background-image: url('@GetHullUrl(ship)')"></div>
+                        </div>
                     </div>
                 </div>
 
-                <div class="ship-grid-preview">
-                    <span class="muted">GRID FOOTPRINT</span>
-                    <div class="mini-grid">
-                        @for (int r = 0; r < ship.Width; r++)
-                        {
-                            <div class="mini-row">
-                                @for (int c = 0; c < ship.Length; c++)
-                                {
-                                    <div class="mini-cell filled"></div>
-                                }
-                            </div>
-                        }
+                <div class="ship-card-panel">
+                    <div class="ship-stats">
+                        <div class="stat">
+                            <span class="stat-label">LENGTH</span>
+                            <span class="stat-value">@ship.Length</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">WIDTH</span>
+                            <span class="stat-value">@ship.Width</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">MAX / PLAYER</span>
+                            <span class="stat-value">@ship.MaxPerPlayer</span>
+                        </div>
+                        <div class="stat">
+                            <span class="stat-label">GRID CELLS</span>
+                            <span class="stat-value">@(ship.Length * ship.Width)</span>
+                        </div>
+                    </div>
+
+                    <div class="ship-grid-preview">
+                        <span class="muted">GRID FOOTPRINT</span>
+                        <div class="mini-grid">
+                            @for (int r = 0; r < ship.Width; r++)
+                            {
+                                <div class="mini-row">
+                                    @for (int c = 0; c < ship.Length; c++)
+                                    {
+                                        <div class="mini-cell filled"></div>
+                                    }
+                                </div>
+                            }
+                        </div>
                     </div>
                 </div>
             </div>
@@ -88,9 +94,14 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        ships = await Api.GetShipTypesAsync();
-        if (ships == null)
+        var raw = await Api.GetShipTypesAsync();
+        if (raw is null)
             errorMessage = "Failed to load fleet data. Is the API running?";
+        else
+            ships = raw.OrderBy(s => s.ShipID).ToList();
         loading = false;
     }
+
+    static string GetHullUrl(ShipTypeListResponseDto ship) =>
+        ShipVisualHelper.GetHullAssetUrl(ShipVisualHelper.SlugFromShipName(ship.ShipName));
 }

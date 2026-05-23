@@ -17,8 +17,8 @@
 	[✓] 2.2 - Create the DbContext and configure it to use PostgreSQL
 	[✓] 2.3 - Implement swaggerUI for API documentation and testing
 	[✓] 2.4 - Test the connection to the DB by creating a simple endpoint that;
-		[✓] a) retrieves data from one of the tables
-		[✓] b) inserts data into one of the tables
+		[✓] 2.4.1 retrieves data from one of the tables
+		[✓] 2.4.2 inserts data into one of the tables
 
 [+] 3 - Create the backend/server, complete with all the services, interfaces and controllers
 	[✓] 3.1 - Implement the entities and models in backend to represent the DB tables
@@ -36,7 +36,8 @@
 
 [✔] 4 - Implement game logic. It can be found in Domain/GameLogic
 	[✓] 4.1 - Coordinate, Cell and CellState
-	[✓] 4.2 - ShipPlacementHelper. Checks for out of bound ship placement
+	[✓] 4.2 - ShipPlacementHelper. Holds the list of coordinates that have a ship on it
+	Also, checks for out of bound ship placement
 	[✓] 4.3 - Board, consisting of cells. Supports placing ships and firing shots on it
 	[✓] 4.4 - GameState. Accepts 2 players, a board for each player. Manages turn etc.
 
@@ -52,12 +53,22 @@
 	[ ]	5.7 - Leaderboard page
 	[✓]	5.8 - Match History page
 	[✓] 5.9 - Match replay capability
-	[+] 5.10 - Clean-up the UI. Remove debug texts, remove testing pages like /users etc.
+	[ ] 5.10 - Settings page for users to update user name, password, and email.
+	[+] 5.11 - Clean-up the UI. Remove debug texts, remove testing pages like /users etc.
 
 [+] 6 - Implement SignalR
 	[✓] 6.1 - Queue Hub. A single hub for all the players
 	[✓] 6.2 - Matchmaking Logic based on Ranking and time elapsed in queue for a player
-	[✓] 6.3 - Game Hub. A new instance for every matched player duo
+	[✓] 6.3 - Game Hub. A new group (SignalR works with groups, not instances) for every matched player duo
 	[✓] 6.4 - Keep ship placements in memory until both players are done, then save it all to DB at once
-	[✓] 6.5 - Keep player moves (shots) in memory until the game is over, then save it all to DB at once
-	[✓] 6.6 - Ranking change logic after a game is over. It is mainly based on ranking difference
+	[✓] 6.5 - Keep player moves (shots) in memory until the game is over, then save it all to DB at once. Preserve the order of shots!
+	[✓] 6.6 - Ranking change logic after a game is over. It is mainly based on rank difference between opponents
+
+[ ] 7 - Add visuals to the game.
+	[✓] 7.1 - Ship visuals
+	[ ] 7.2 - A simple sea background with some waves on it (static)
+	[+] 7.3 - Update a ships look when it is partially hit
+	[+] 7.4 - Then, another update for when it is completely destroyed
+
+[ ] 8 - Do research for options to deploy the app
+	[ ] 8.1 - Deploy the app!

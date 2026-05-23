@@ -1,0 +1,31 @@
+<div class="@CellClass"
+     title="@Title"
+     @onclick="OnClick"
+     @onpointerenter="OnPointerEnter"
+     @oncontextmenu="OnContextMenu"
+     @oncontextmenu:preventDefault="@PreventContextMenu">
+    @if (!string.IsNullOrEmpty(HullUrl))
+    {
+        <div class="battle-cell__ship battle-cell__ship--hull @(ShipVertical ? "battle-cell__ship--hull-vert" : "battle-cell__ship--hull-horiz") @HullStateClass"
+             style="--ship-len: @ShipLength; --ship-slice: @HullSliceIndex; background-image: url('@HullUrl')"></div>
+    }
+    @if (!string.IsNullOrEmpty(EffectArtUrl))
+    {
+        <img class="battle-cell__fx" src="@EffectArtUrl" alt="" @key="@EffectArtUrl" />
+    }
+</div>
+
+@code {
+    [Parameter] public string CellClass { get; set; } = "battle-cell battle-cell-water";
+    [Parameter] public string? Title { get; set; }
+    [Parameter] public string? HullUrl { get; set; }
+    [Parameter] public int HullSliceIndex { get; set; }
+    [Parameter] public int ShipLength { get; set; } = 1;
+    [Parameter] public bool ShipVertical { get; set; }
+    [Parameter] public string? HullStateClass { get; set; }
+    [Parameter] public string? EffectArtUrl { get; set; }
+    [Parameter] public EventCallback OnClick { get; set; }
+    [Parameter] public EventCallback OnPointerEnter { get; set; }
+    [Parameter] public EventCallback OnContextMenu { get; set; }
+    [Parameter] public bool PreventContextMenu { get; set; }
+}

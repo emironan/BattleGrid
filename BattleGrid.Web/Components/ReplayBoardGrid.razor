@@ -1,4 +1,5 @@
 @using BattleGrid.Contracts.ResponseDtos
+@using BattleGrid.Web.GameVisuals
 
 <div class="battle-grid-frame battle-grid-frame--fit battle-grid-frame--frozen">
     <div class="battle-grid">
@@ -9,9 +10,15 @@
                 <div class="battle-axis">@GridCoordinates.DisplayRowNumberFromY(cy)</div>
                 @for (var x = 0; x < Board.GridSize; x++)
                 {
-                    <div class="@GetCellClass(x, cy)"
-                         title="@($"{GridCoordinates.ColumnIndexToLetter(x)}{GridCoordinates.DisplayRowNumberFromY(cy)}")">
-                    </div>
+                    var cell = BuildCell(x, cy);
+                    <BattleBoardCell CellClass="@cell.CellClass"
+                                     Title="@($"{GridCoordinates.ColumnIndexToLetter(x)}{GridCoordinates.DisplayRowNumberFromY(cy)}")"
+                                     HullUrl="@cell.HullUrl"
+                                     HullSliceIndex="@cell.HullSliceIndex"
+                                     ShipLength="@cell.ShipLength"
+                                     ShipVertical="@cell.ShipVertical"
+                                     HullStateClass="@cell.HullStateClass"
+                                     EffectArtUrl="@cell.EffectArtUrl" />
                 }
             </div>
         }
@@ -29,20 +36,111 @@
     [Parameter, EditorRequired] public int BoardOwnerId { get; set; }
     [Parameter, EditorRequired] public MatchReplayResponseDto Replay { get; set; } = null!;
     [Parameter] public int RevealedMoveCount { get; set; }
-    [Parameter] public IReadOnlyDictionary<(int X, int Y), int> Ships { get; set; } = new Dictionary<(int X, int Y), int>();
+    [Parameter] public IReadOnlyDictionary<int, string>? ShipNamesById { get; set; }
 
-    string GetCellClass(int x, int y)
+    readonly Dictionary<(int X, int Y), int> _cellToPlacementIndex = new();
+    readonly List<MatchReplayPlacementDto> _ownerPlacements = new();
+
+    protected override void OnParametersSet()
+    {
+        _cellToPlacementIndex.Clear();
+        _ownerPlacements.Clear();
+
+        foreach (var p in Replay.Placements.Where(p => p.PlayerId == BoardOwnerId))
+        {
+            var index = _ownerPlacements.Count;
+            _ownerPlacements.Add(p);
+            var length = p.Length > 0 ? p.Length : 1;
+            var width = p.Width > 0 ? p.Width : 1;
+            if (!ShipPlacementHelper.TryGenerateRectangle(
+                    new Coordinate(p.StartX, p.StartY),
+                    length,
+                    width,
+                    p.IsVertical,
+                    out var cells))
+                continue;
+
+            foreach (var c in cells)
+                _cellToPlacementIndex[(c.X, c.Y)] = index;
+        }
+    }
+
+    sealed record ReplayCellVisual(
+        string CellClass,
+        string? HullUrl,
+        int HullSliceIndex,
+        int ShipLength,
+        bool ShipVertical,
+        string? HullStateClass,
+        string? EffectArtUrl);
+
+    ReplayCellVisual BuildCell(int x, int y)
     {
         var shot = GetShotOnBoard(x, y);
+        string? effectUrl = null;
+        var cellClass = "battle-cell battle-cell-water";
+
         if (shot == "Miss")
-            return "battle-cell battle-cell--incoming-miss";
-        if (shot == "Hit")
-            return "battle-cell battle-cell--incoming-hit";
+        {
+            cellClass = "battle-cell battle-cell-water battle-cell--incoming-miss battle-cell--has-fx";
+            effectUrl = ShipVisualHelper.GetSettledShotFxUrl("Miss");
+        }
+        else if (shot == "Hit")
+        {
+            cellClass = "battle-cell battle-cell-water battle-cell--incoming-hit";
+            effectUrl = ShipVisualHelper.GetSettledShotFxUrl("Hit");
+        }
 
-        if (Ships.ContainsKey((x, y)))
-            return $"battle-cell battle-cell--placed ship-tone-{Math.Abs(Ships[(x, y)]) % 5}";
+        if (_cellToPlacementIndex.TryGetValue((x, y), out var placementIndex))
+        {
+            var placement = _ownerPlacements[placementIndex];
+            var slug = ShipVisualHelper.ResolveShipSlug(placement.ShipId, placement.Length, ShipNamesById);
+            if (slug is not null)
+            {
+                var length = placement.Length > 0 ? placement.Length : 1;
+                var slice = ShipVisualHelper.GetSliceIndexFromBow(
+                    placement.StartX, placement.StartY, placement.IsVertical, x, y, length);
+                var state = GetReplaySegmentState(placementIndex, shot);
+                var hullUrl = ShipVisualHelper.GetHullAssetUrl(slug);
+                return new ReplayCellVisual(
+                    "battle-cell battle-cell-water battle-cell--placed",
+                    hullUrl,
+                    slice,
+                    length,
+                    placement.IsVertical,
+                    ShipVisualHelper.HullLayerModifierClass(state),
+                    effectUrl);
+            }
+        }
 
-        return "battle-cell battle-cell-water";
+        return new ReplayCellVisual(cellClass, null, 0, 1, false, null, effectUrl);
+    }
+
+    ShipSegmentState GetReplaySegmentState(int placementIndex, string? shotOnCell)
+    {
+        if (IsPlacementSunkInReplay(placementIndex))
+            return ShipSegmentState.Destroyed;
+
+        if (shotOnCell == "Hit")
+            return ShipSegmentState.Damaged;
+
+        return ShipSegmentState.Intact;
+    }
+
+    bool IsPlacementSunkInReplay(int placementIndex)
+    {
+        var placement = _ownerPlacements[placementIndex];
+        var length = placement.Length > 0 ? placement.Length : 1;
+        var width = placement.Width > 0 ? placement.Width : 1;
+        if (!ShipPlacementHelper.TryGenerateRectangle(
+                new Coordinate(placement.StartX, placement.StartY),
+                length,
+                width,
+                placement.IsVertical,
+                out var cells))
+            return false;
+
+        return cells.All(c => GetShotOnBoard(c.X, c.Y) == "Hit");
     }
 
     string? GetShotOnBoard(int x, int y)

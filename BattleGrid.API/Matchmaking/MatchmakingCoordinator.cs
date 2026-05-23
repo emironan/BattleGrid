@@ -220,7 +220,7 @@ public sealed class MatchmakingCoordinator
 
     /// <summary> 
     /// A player's info in the queue 
-    /// Queue will be consisting of a list of this records
+    /// Queue will be consisting of a list of WAitingEntry records
     /// </summary>
     internal sealed record WaitingEntry(
         string ConnectionId,

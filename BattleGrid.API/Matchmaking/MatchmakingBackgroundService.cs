@@ -5,7 +5,7 @@ namespace BattleGrid.API.Matchmaking;
 /// </summary>
 public sealed class MatchmakingBackgroundService : BackgroundService
 {
-    private static readonly TimeSpan TickInterval = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan TickInterval = TimeSpan.FromSeconds(5);    // Queue checks for suitable opponents every 5 seconds
 
     private readonly MatchmakingCoordinator _coordinator;
     private readonly ILogger<MatchmakingBackgroundService> _logger;

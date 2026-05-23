@@ -30,8 +30,7 @@ else if (Auth.CurrentUser?.IsAdmin != true)
 }
 else
 {
-    <div class="admin-panel-page">
-        <div class="page-header">
+    <div class="page-header">
             <h1><span class="accent">◈</span> ADMIN PANEL</h1>
             <p class="muted">Season and player moderation</p>
         </div>
@@ -45,7 +44,7 @@ else
         }
         else
         {
-            <div class="cards-grid admin-panel-grid">
+        <div class="cards-grid">
                 <div class="card card-accent admin-season-card">
                     <div class="card-header">
                         <span class="card-icon">📅</span>
@@ -243,9 +242,8 @@ else
                         </button>
                     </div>
                 </div>
-            </div>
-        }
-    </div>
+        </div>
+    }
 }
 
 @code {

@@ -20,6 +20,27 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddControllers();
 
+    // Add CORS policy for deployment
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowBlazorFrontend", policy =>
+    {
+        // Since we are using cookies/credentials with SignalR, we MUST specify exact URLs:
+        policy//.AllowAnyOrigin()
+              .WithOrigins("http://localhost:4746",
+                           "http://127.0.0.1:4746",
+                           "https://localhost:4745",
+                           "https://127.0.0.1:4745",
+                           "http://api:8080",
+                           "https://api:8080",
+                           "http://web:8080",
+                           "https://web:8080")
+              .AllowAnyMethod()
+              .AllowAnyHeader()
+              .AllowCredentials(); // This accepts the cookies to be sent along with the request
+    });
+});
+
 builder.Services.AddDbContext<BattleGridDbContext>(options =>
 {
     var cs = builder.Configuration.GetConnectionString("BattleGridDB");
@@ -148,7 +169,12 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-app.UseHttpsRedirection();
+// This is commented out in case the hosting provider handles SSL termination at he proxy level
+// Leaving enabled can sometimes cause infinite redirect loops in free Docker containers
+//aaa app.UseHttpsRedirection();
+
+// Enable CORS
+app.UseCors("AllowBlazorFrontend");
 
 app.UseAuthentication();
 app.UseAuthorization();

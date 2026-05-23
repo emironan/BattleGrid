@@ -150,9 +150,15 @@ else
                     <button type="button" class="btn btn-danger btn-full mt-sm" @onclick="LeaveQueueFromDashboardAsync">LEAVE QUEUE</button>
                 }
                 <a href="/match-history" class="btn btn-outline btn-full mt-sm">MATCH HISTORY</a>
-                <a href="/users" class="btn btn-outline btn-full">VIEW ALL OPERATORS</a>
+                @if (Auth.CurrentUser!.IsAdmin)
+                {
+                    <a href="/users" class="btn btn-outline btn-full">VIEW ALL OPERATORS</a>
+                }
                 <a href="/shiptypes" class="btn btn-outline btn-full">VIEW FLEET REGISTRY</a>
-                <a href="http://localhost:4744/swagger" target="_blank" class="btn btn-outline btn-full">OPEN API DOCS ↗</a>
+                @if (Auth.CurrentUser!.IsAdmin)
+                {
+                    <a href="http://localhost:4744/swagger" target="_blank" class="btn btn-outline btn-full">OPEN API DOCS ↗</a>
+                }
                 <button class="btn btn-danger btn-full" @onclick="Logout">LOGOUT</button>
             </div>
         </div>

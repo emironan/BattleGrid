@@ -26,6 +26,7 @@ else if (!Auth.IsLoggedIn || string.IsNullOrEmpty(Auth.AccessToken))
 }
 else
 {
+    <div class="game-match-view">
     <div class="page-header page-header--match">
         <div class="page-header-top">
             <h1><span class="accent">◈</span> MATCH <span class="accent">#@MatchId</span></h1>
@@ -72,7 +73,6 @@ else
                     }
                     <div class="battle-grid-frame battle-grid-frame--fit"
                          tabindex="0"
-                         style="@(SelectedShip is not null ? "cursor: crosshair;" : null)"
                          @onkeydown="OnGridKeyDown"
                          @onpointerleave="OnPointerLeaveGrid"
                          @oncontextmenu="OnGridContextMenu"
@@ -87,11 +87,17 @@ else
                                     {
                                         var cx = x;
                                         var label = $"{GridCoordinates.ColumnIndexToLetter(cx)}{GridCoordinates.DisplayRowNumberFromY(cy)}";
-                                        <div class="@GetPlacementCellClass(cx, cy)"
-                                             title="@label (internal x={cx}, y={cy})"
-                                             @onpointerenter="@(() => OnPointerEnterCell(cx, cy))"
-                                             @onclick="@(() => OnCellClick(cx, cy))">
-                                        </div>
+                                        var pCell = BuildPlacementCell(cx, cy);
+                                        <BattleBoardCell CellClass="@pCell.CellClass"
+                                                         Title="@($"{label} (internal x={cx}, y={cy})")"
+                                                         HullUrl="@pCell.HullUrl"
+                                                         HullSliceIndex="@pCell.HullSliceIndex"
+                                                         ShipLength="@pCell.ShipLength"
+                                                         ShipVertical="@pCell.ShipVertical"
+                                                         HullStateClass="@pCell.HullStateClass"
+                                                         EffectArtUrl="@pCell.EffectArtUrl"
+                                                         OnPointerEnter="@(() => OnPointerEnterCell(cx, cy))"
+                                                         OnClick="@(() => OnCellClick(cx, cy))" />
                                     }
                                 </div>
                             }
@@ -133,56 +139,26 @@ else
                             <strong>@PlacedShipCount</strong> / @TotalShipInstances placed
                         </div>
                         <div class="game-dock-list">
-                            @foreach (var ship in fleetManifest)
-                            {
-                                var exhausted = Remaining(ship) <= 0;
-                                var sel = SelectedShip?.ShipID == ship.ShipID;
-                                <div class="ship-dock-card @(sel ? "ship-dock-card--selected" : null) @(exhausted ? "ship-dock-card--exhausted" : null)"
-                                     @onclick="@(() => OnSelectShip(ship))">
-                                    <div class="ship-card-header">
-                                        <span class="ship-name">@ship.ShipName</span>
-                                        <span class="ship-id muted">#@ship.ShipID · @Remaining(ship)/@ship.MaxPerPlayer left</span>
-                                    </div>
-                                    <div class="ship-dock-meta">
-                                        <div class="stat">
-                                            <span class="stat-label">LENGTH</span>
-                                            <span class="stat-value">@ship.Length</span>
-                                        </div>
-                                        <div class="stat">
-                                            <span class="stat-label">WIDTH</span>
-                                            <span class="stat-value">@ship.Width</span>
-                                        </div>
-                                        <div class="stat">
-                                            <span class="stat-label">CELLS</span>
-                                            <span class="stat-value">@(ship.Length * ship.Width)</span>
-                                        </div>
-                                        <div class="stat">
-                                            <span class="stat-label">MAX</span>
-                                            <span class="stat-value">@ship.MaxPerPlayer</span>
-                                        </div>
-                                    </div>
-                                    <div class="ship-dock-visual">
-                                        @for (int i = 0; i < ship.Length; i++)
-                                        {
-                                            <div class="ship-cell @(i == 0 ? "cell-bow" : i == ship.Length - 1 ? "cell-stern" : "cell-mid")"></div>
-                                        }
-                                    </div>
-                                    <div class="ship-dock-footprint">
-                                        <span class="muted">FOOTPRINT (W×L)</span>
-                                        <div class="mini-grid">
-                                            @for (int r = 0; r < ship.Width; r++)
-                                            {
-                                                <div class="mini-row">
-                                                    @for (int c = 0; c < ship.Length; c++)
-                                                    {
-                                                        <div class="mini-cell filled"></div>
-                                                    }
-                                                </div>
-                                            }
-                                        </div>
-                                    </div>
-                                </div>
-                            }
+                            <div class="game-dock-list-col">
+                                @foreach (var ship in fleetManifest.Take(3))
+                                {
+                                    <ShipDockCard Ship="ship"
+                                                  Selected="SelectedShip?.ShipID == ship.ShipID"
+                                                  Exhausted="Remaining(ship) <= 0"
+                                                  RemainingCount="Remaining(ship)"
+                                                  OnSelect="OnSelectShip" />
+                                }
+                            </div>
+                            <div class="game-dock-list-col">
+                                @foreach (var ship in fleetManifest.Skip(3))
+                                {
+                                    <ShipDockCard Ship="ship"
+                                                  Selected="SelectedShip?.ShipID == ship.ShipID"
+                                                  Exhausted="Remaining(ship) <= 0"
+                                                  RemainingCount="Remaining(ship)"
+                                                  OnSelect="OnSelectShip" />
+                                }
+                            </div>
                         </div>
                     }
                 </div>
@@ -222,10 +198,16 @@ else
                                     @for (int x = 0; x < Board.GridSize; x++)
                                     {
                                         var cx = x;
-                                        <div class="@GetOwnBattleCellClass(cx, cy)"
-                                             title="@($"Own {GridCoordinates.ColumnIndexToLetter(cx)}{GridCoordinates.DisplayRowNumberFromY(cy)}")"
-                                             @onclick="@(() => OnOwnBattleCellClick(cx, cy))">
-                                        </div>
+                                        var ownCell = BuildOwnBattleCell(cx, cy);
+                                        <BattleBoardCell CellClass="@ownCell.CellClass"
+                                                         Title="@($"Own {GridCoordinates.ColumnIndexToLetter(cx)}{GridCoordinates.DisplayRowNumberFromY(cy)}")"
+                                                         HullUrl="@ownCell.HullUrl"
+                                                         HullSliceIndex="@ownCell.HullSliceIndex"
+                                                         ShipLength="@ownCell.ShipLength"
+                                                         ShipVertical="@ownCell.ShipVertical"
+                                                         HullStateClass="@ownCell.HullStateClass"
+                                                         EffectArtUrl="@ownCell.EffectArtUrl"
+                                                         OnClick="@(() => OnOwnBattleCellClick(cx, cy))" />
                                     }
                                 </div>
                             }
@@ -258,10 +240,11 @@ else
                                     @for (int x = 0; x < Board.GridSize; x++)
                                     {
                                         var cx = x;
-                                        <div class="@GetEnemyBattleCellClass(cx, cy)"
-                                             title="@($"Enemy {GridCoordinates.ColumnIndexToLetter(cx)}{GridCoordinates.DisplayRowNumberFromY(cy)}")"
-                                             @onclick="@(() => OnEnemyBattleCellClick(cx, cy))">
-                                        </div>
+                                        var enemyCell = BuildEnemyBattleCell(cx, cy);
+                                        <BattleBoardCell CellClass="@enemyCell.CellClass"
+                                                         Title="@($"Enemy {GridCoordinates.ColumnIndexToLetter(cx)}{GridCoordinates.DisplayRowNumberFromY(cy)}")"
+                                                         EffectArtUrl="@enemyCell.EffectArtUrl"
+                                                         OnClick="@(() => OnEnemyBattleCellClick(cx, cy))" />
                                     }
                                 </div>
                             }
@@ -314,6 +297,7 @@ else
         <span class="game-session-status-sep" aria-hidden="true">·</span>
         <span>Last event: <strong>@lastEvent</strong></span>
     </footer>
+    </div>
 }
 
 @code {
@@ -355,12 +339,20 @@ else
     (int x, int y)? HoverCell;
     readonly Dictionary<int, int> _placedCount = new();
     readonly Dictionary<(int x, int y), int> _occupyingShipId = new();
+    readonly Dictionary<(int x, int y), int> _cellToPlacementIndex = new();
     readonly List<PlacedShipDto> _placementOrder = new();
     string? PlacementFeedback;
     string? ShotFeedback;
 
     readonly Dictionary<(int x, int y), string> _enemyIntel = new();
     readonly Dictionary<(int x, int y), string> _incomingOnOwn = new();
+    readonly Dictionary<(int x, int y), ShotCellFxPhase> _targetGridFxPhase = new();
+    readonly Dictionary<(int x, int y), ShotCellFxPhase> _ownFleetFxPhase = new();
+    readonly Dictionary<(int x, int y), DateTimeOffset> _targetGridMissAnimMinUntil = new();
+    readonly Dictionary<(int x, int y), DateTimeOffset> _ownFleetMissAnimMinUntil = new();
+
+    const int MissEffectAnimMs = 500;
+    bool _battleFxPreloaded;
 
     string PhaseSubtitle => _postMatchPhase
         ? "Match ended"
@@ -420,6 +412,7 @@ else
         _started = true;
         await TryApplyMatchRecoveryFromApiAsync();
         await StartHubAsync();
+        await PreloadBattleFxAsync();
         StateHasChanged();
     }
 
@@ -497,10 +490,324 @@ else
     bool PreviewOverlaps(List<Coordinate> cells) =>
         cells.Exists(c => _occupyingShipId.ContainsKey((c.X, c.Y)));
 
+    sealed record BattleCellVisual(
+        string CellClass,
+        string? HullUrl,
+        int HullSliceIndex,
+        int ShipLength,
+        bool ShipVertical,
+        string? HullStateClass,
+        string? EffectArtUrl);
+
+    void RebuildPlacementCellMap()
+    {
+        _cellToPlacementIndex.Clear();
+        if (fleetManifest is null)
+            return;
+
+        for (var i = 0; i < _placementOrder.Count; i++)
+        {
+            var placement = _placementOrder[i];
+            var ship = fleetManifest.FirstOrDefault(s => s.ShipID == placement.ShipID);
+            if (ship is null)
+                continue;
+
+            if (!ShipPlacementHelper.TryGenerateRectangle(
+                    new Coordinate(placement.StartX, placement.StartY),
+                    ship.Length,
+                    ship.Width,
+                    placement.IsVertical,
+                    out var cells) || cells is null)
+                continue;
+
+            foreach (var c in cells)
+                _cellToPlacementIndex[(c.X, c.Y)] = i;
+        }
+    }
+
+    ShipTypeListResponseDto? GetShipForPlacement(int placementIndex)
+    {
+        if (placementIndex < 0 || placementIndex >= _placementOrder.Count)
+            return null;
+
+        var shipId = _placementOrder[placementIndex].ShipID;
+        return fleetManifest?.FirstOrDefault(s => s.ShipID == shipId);
+    }
+
+    IEnumerable<(int X, int Y)> GetCellsForPlacement(int placementIndex)
+    {
+        if (placementIndex < 0 || placementIndex >= _placementOrder.Count)
+            yield break;
+
+        var placement = _placementOrder[placementIndex];
+        var ship = GetShipForPlacement(placementIndex);
+        if (ship is null)
+            yield break;
+
+        if (!ShipPlacementHelper.TryGenerateRectangle(
+                new Coordinate(placement.StartX, placement.StartY),
+                ship.Length,
+                ship.Width,
+                placement.IsVertical,
+                out var cells) || cells is null)
+            yield break;
+
+        foreach (var c in cells)
+            yield return (c.X, c.Y);
+    }
+
+    bool IsPlacementSunk(int placementIndex)
+    {
+        foreach (var (x, y) in GetCellsForPlacement(placementIndex))
+        {
+            if (_incomingOnOwn.TryGetValue((x, y), out var result) &&
+                result is "Sunk" or "Win")
+                return true;
+        }
+
+        return false;
+    }
+
+    ShipSegmentState GetSegmentState(int placementIndex, int x, int y)
+    {
+        if (IsPlacementSunk(placementIndex))
+            return ShipSegmentState.Destroyed;
+
+        if (_incomingOnOwn.TryGetValue((x, y), out var incoming))
+        {
+            if (incoming is "Sunk" or "Win")
+                return ShipSegmentState.Destroyed;
+            if (incoming is "Hit")
+                return ShipSegmentState.Damaged;
+        }
+
+        return ShipSegmentState.Intact;
+    }
+
+    bool TryGetShipHull(
+        int placementIndex,
+        int x,
+        int y,
+        out string? hullUrl,
+        out int sliceIndex,
+        out int shipLength,
+        out bool vertical,
+        out string hullStateClass)
+    {
+        hullUrl = null;
+        sliceIndex = 0;
+        shipLength = 1;
+        vertical = false;
+        hullStateClass = "";
+
+        var placement = _placementOrder[placementIndex];
+        var ship = GetShipForPlacement(placementIndex);
+        if (ship is null)
+            return false;
+
+        var slug = ShipVisualHelper.SlugFromShipName(ship.ShipName);
+        hullUrl = ShipVisualHelper.GetHullAssetUrl(slug);
+        shipLength = ship.Length;
+        sliceIndex = ShipVisualHelper.GetSliceIndexFromBow(placement, x, y, ship.Length);
+        vertical = placement.IsVertical;
+        hullStateClass = ShipVisualHelper.HullLayerModifierClass(GetSegmentState(placementIndex, x, y));
+        return true;
+    }
+
+    static BattleCellVisual EmptyCell(string cellClass, string? effectUrl = null) =>
+        new(cellClass, null, 0, 1, false, null, effectUrl);
+
+    string? ResolveShotEffectUrl(
+        string result,
+        int x,
+        int y,
+        Dictionary<(int x, int y), ShotCellFxPhase> fxPhase,
+        Dictionary<(int x, int y), DateTimeOffset> missAnimMinUntil)
+    {
+        var key = (x, y);
+
+        if (string.Equals(result, "Miss", StringComparison.OrdinalIgnoreCase))
+        {
+            if (missAnimMinUntil.TryGetValue(key, out var until) && DateTimeOffset.UtcNow < until)
+                return ShipVisualHelper.GetShotFxUrl(ShotCellFxPhase.MissAnimation);
+
+            if (fxPhase.TryGetValue(key, out var missPhase) && missPhase == ShotCellFxPhase.MissAnimation)
+                return ShipVisualHelper.GetShotFxUrl(ShotCellFxPhase.MissAnimation);
+
+            return ShipVisualHelper.GetShotFxUrl(ShotCellFxPhase.MissSettled);
+        }
+
+        if (string.Equals(result, "Hit", StringComparison.OrdinalIgnoreCase))
+        {
+            if (fxPhase.TryGetValue(key, out var hitPhase) && hitPhase == ShotCellFxPhase.HitSettled)
+                return ShipVisualHelper.GetShotFxUrl(ShotCellFxPhase.HitSettled);
+
+            return ShipVisualHelper.GetShotFxUrl(ShotCellFxPhase.HitAnimation);
+        }
+
+        if (result is "Sunk" or "Win")
+            return ShipVisualHelper.GetShotFxUrl(ShotCellFxPhase.HitSettled);
+
+        return null;
+    }
+
+    void OnShotVisualEffect(ShotFiredMessage msg, bool onTargetGrid)
+    {
+        var fxPhase = onTargetGrid ? _targetGridFxPhase : _ownFleetFxPhase;
+        var missAnimMinUntil = onTargetGrid ? _targetGridMissAnimMinUntil : _ownFleetMissAnimMinUntil;
+        var key = (msg.X, msg.Y);
+
+        if (string.Equals(msg.Result, "Miss", StringComparison.OrdinalIgnoreCase))
+        {
+            fxPhase[key] = ShotCellFxPhase.MissAnimation;
+            missAnimMinUntil[key] = DateTimeOffset.UtcNow.AddMilliseconds(MissEffectAnimMs);
+            return;
+        }
+
+        if (string.Equals(msg.Result, "Hit", StringComparison.OrdinalIgnoreCase))
+        {
+            fxPhase[key] = ShotCellFxPhase.HitAnimation;
+            return;
+        }
+
+        if (string.Equals(msg.Result, "Sunk", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(msg.Result, "Win", StringComparison.OrdinalIgnoreCase))
+        {
+            if (msg.SunkCells is { Count: > 0 })
+            {
+                foreach (var c in msg.SunkCells)
+                    fxPhase[(c.X, c.Y)] = ShotCellFxPhase.HitSettled;
+            }
+            else
+                fxPhase[key] = ShotCellFxPhase.HitSettled;
+        }
+    }
+
+    async Task ProcessShotFiredUiAsync(ShotFiredMessage msg, bool onTargetGrid)
+    {
+        await InvokeAsync(StateHasChanged);
+        await Task.Yield();
+
+        if (string.Equals(msg.Result, "Miss", StringComparison.OrdinalIgnoreCase))
+        {
+            var fxPhase = onTargetGrid ? _targetGridFxPhase : _ownFleetFxPhase;
+            var missAnimMinUntil = onTargetGrid ? _targetGridMissAnimMinUntil : _ownFleetMissAnimMinUntil;
+            var key = (msg.X, msg.Y);
+            if (missAnimMinUntil.TryGetValue(key, out var until))
+            {
+                var remaining = until - DateTimeOffset.UtcNow;
+                if (remaining > TimeSpan.Zero)
+                    await Task.Delay(remaining);
+            }
+
+            fxPhase[key] = ShotCellFxPhase.MissSettled;
+            missAnimMinUntil.Remove(key);
+            await InvokeAsync(StateHasChanged);
+        }
+
+        try
+        {
+            await TryPlayShotResultSoundAsync(msg.Result);
+        }
+        catch
+        {
+            // audio optional
+        }
+    }
+
+    async Task PreloadBattleFxAsync()
+    {
+        if (_battleFxPreloaded)
+            return;
+
+        _battleFxPreloaded = true;
+        try
+        {
+            await JS.InvokeVoidAsync("battleGridFx.preload", ShipVisualHelper.GetPreloadEffectUrls());
+        }
+        catch
+        {
+            _battleFxPreloaded = false;
+        }
+    }
+
+    void ApplySettledFxForIntelCell(int x, int y, string result, bool onTargetGrid)
+    {
+        var fxPhase = onTargetGrid ? _targetGridFxPhase : _ownFleetFxPhase;
+        if (string.Equals(result, "Miss", StringComparison.OrdinalIgnoreCase))
+            fxPhase[(x, y)] = ShotCellFxPhase.MissSettled;
+        else if (string.Equals(result, "Hit", StringComparison.OrdinalIgnoreCase))
+            fxPhase[(x, y)] = ShotCellFxPhase.HitAnimation;
+        else if (result is "Sunk" or "Win")
+            fxPhase[(x, y)] = ShotCellFxPhase.HitSettled;
+    }
+
+    BattleCellVisual BuildPlacementCell(int x, int y)
+    {
+        if (_cellToPlacementIndex.TryGetValue((x, y), out var placementIndex) &&
+            TryGetShipHull(placementIndex, x, y, out var hullUrl, out var slice, out var len, out var vertical, out var stateClass))
+        {
+            return new BattleCellVisual(
+                "battle-cell battle-cell-water battle-cell--placed",
+                hullUrl, slice, len, vertical, stateClass, null);
+        }
+
+        return EmptyCell(GetPlacementCellClass(x, y));
+    }
+
+    BattleCellVisual BuildOwnBattleCell(int x, int y)
+    {
+        string? effectUrl = null;
+        var cellClass = "battle-cell battle-cell-water";
+
+        if (_incomingOnOwn.TryGetValue((x, y), out var incoming))
+        {
+            cellClass = incoming switch
+            {
+                "Miss" => "battle-cell battle-cell-water battle-cell--incoming-miss battle-cell--has-fx",
+                "Hit" or "Sunk" or "Win" => "battle-cell battle-cell-water battle-cell--incoming-hit",
+                _ => cellClass
+            };
+            effectUrl = ResolveShotEffectUrl(incoming, x, y, _ownFleetFxPhase, _ownFleetMissAnimMinUntil);
+        }
+
+        if (_cellToPlacementIndex.TryGetValue((x, y), out var placementIndex) &&
+            TryGetShipHull(placementIndex, x, y, out var hullUrl, out var slice, out var len, out var vertical, out var stateClass))
+        {
+            return new BattleCellVisual(
+                "battle-cell battle-cell-water battle-cell--placed",
+                hullUrl, slice, len, vertical, stateClass, effectUrl);
+        }
+
+        return EmptyCell(cellClass, effectUrl);
+    }
+
+    BattleCellVisual BuildEnemyBattleCell(int x, int y)
+    {
+        var sel = !_postMatchPhase ? " battle-cell--selectable" : "";
+        string? effectUrl = null;
+        var cellClass = $"battle-cell battle-cell-fog{sel}";
+
+        if (_enemyIntel.TryGetValue((x, y), out var intel))
+        {
+            cellClass = intel switch
+            {
+                "Miss" => $"battle-cell battle-cell-fog battle-cell--intel-miss battle-cell--has-fx{sel}",
+                "Hit" => $"battle-cell battle-cell-fog battle-cell--intel-hit battle-cell--has-fx{sel}",
+                "Sunk" => $"battle-cell battle-cell-fog battle-cell--intel-sunk battle-cell--has-fx{sel}",
+                "Win" => $"battle-cell battle-cell-fog battle-cell--intel-sunk battle-cell--has-fx{sel}",
+                _ => cellClass
+            };
+            effectUrl = ResolveShotEffectUrl(intel, x, y, _targetGridFxPhase, _targetGridMissAnimMinUntil);
+        }
+
+        return EmptyCell(cellClass, effectUrl);
+    }
+
     string GetPlacementCellClass(int x, int y)
     {
-        if (_occupyingShipId.TryGetValue((x, y), out var sid))
-            return $"battle-cell battle-cell--placed ship-tone-{Math.Abs(sid) % 5}";
+        if (_occupyingShipId.TryGetValue((x, y), out _))
+            return "battle-cell battle-cell-water battle-cell--placed";
 
         var isAnchor = SelectedShip is not null && HoverCell is { } h && h.x == x && h.y == y;
         var hasPreview = TryGetPreviewCells(out var prev) && prev is not null;
@@ -569,6 +876,7 @@ else
             SelectedShip = null;
 
         HoverCell = (x, y);
+        RebuildPlacementCellMap();
         StateHasChanged();
         ScheduleDraftSync();
     }
@@ -669,48 +977,6 @@ else
         }
 
         StateHasChanged();
-    }
-
-    string GetOwnBattleCellClass(int x, int y)
-    {
-        if (_incomingOnOwn.TryGetValue((x, y), out var incoming))
-        {
-            return incoming switch
-            {
-                "Miss" => "battle-cell battle-cell--incoming-miss",
-                "Hit" or "Sunk" or "Win" => "battle-cell battle-cell--incoming-hit",
-                _ => "battle-cell battle-cell-water"
-            };
-        }
-
-        if (_occupyingShipId.TryGetValue((x, y), out var sid))
-            return $"battle-cell battle-cell--placed ship-tone-{Math.Abs(sid) % 5}";
-
-        return "battle-cell battle-cell-water";
-    }
-
-    string GetEnemyBattleCellClass(int x, int y)
-    {
-        if (_enemyIntel.TryGetValue((x, y), out var intel))
-        {
-            var sel = !_postMatchPhase ? " battle-cell--selectable" : "";
-            return intel switch
-            {
-                "Miss" => $"battle-cell battle-cell--intel-miss{sel}",
-                "Hit" => $"battle-cell battle-cell--intel-hit{sel}",
-                "Sunk" => $"battle-cell battle-cell--intel-sunk{sel}",
-                "Win" => $"battle-cell battle-cell--intel-sunk{sel}",
-                _ => $"battle-cell battle-cell-fog{sel}"
-            };
-        }
-
-        if (_postMatchPhase)
-            return "battle-cell battle-cell-fog";
-
-        var canAim = Auth.CurrentUser?.UserID == _currentTurnPlayerId;
-        return canAim
-            ? "battle-cell battle-cell-fog battle-cell--selectable"
-            : "battle-cell battle-cell-fog";
     }
 
     /// <summary>
@@ -844,10 +1110,13 @@ else
                 return Task.CompletedTask;
 
             var me = Auth.CurrentUser.UserID;
-            if (msg.ShooterId == me)
+            var onTargetGrid = msg.ShooterId == me;
+            if (onTargetGrid)
                 _enemyIntel[(msg.X, msg.Y)] = msg.Result;
             else
                 _incomingOnOwn[(msg.X, msg.Y)] = msg.Result;
+
+            OnShotVisualEffect(msg, onTargetGrid);
 
             _currentTurnPlayerId = msg.CurrentTurnPlayerId;
             if (msg.ShotClockDeadlineUtc != default)
@@ -859,11 +1128,7 @@ else
             var suffix = msg.ForcedTimeout ? " (auto - open water)" : "";
             ShotFeedback = $"Salvo {(msg.ShooterId == me ? "away" : "incoming")}: {msg.Result}{suffix}";
             lastEvent = $"Shot {msg.Result}";
-            return InvokeAsync(async () =>
-            {
-                await TryPlayShotResultSoundAsync(msg.Result);
-                StateHasChanged();
-            });
+            return ProcessShotFiredUiAsync(msg, onTargetGrid);
         });
 
         _hub.On<string>("ShotRejected", async reason =>
@@ -1035,9 +1300,9 @@ else
         }
     }
 
-    void ApplyFleetPlacementFromServer(FleetPlacementSyncMessage msg)
+    void ApplyOwnFleetCellsFromSnapshot(IReadOnlyList<FleetLayoutCellDto>? cells)
     {
-        if (msg.Cells is null || msg.Cells.Count == 0)
+        if (cells is null || cells.Count == 0)
             return;
 
         if (fleetManifest is not null)
@@ -1052,12 +1317,83 @@ else
         else
             _occupyingShipId.Clear();
 
-        foreach (var c in msg.Cells)
+        foreach (var c in cells)
             _occupyingShipId[(c.X, c.Y)] = c.ShipTypeId;
 
         _placedCount.Clear();
-        foreach (var c in msg.Cells)
+        foreach (var c in cells)
             _placedCount[c.ShipTypeId] = _placedCount.GetValueOrDefault(c.ShipTypeId) + 1;
+    }
+
+    void TryReconstructPlacementsFromOwnFleet(IReadOnlyList<FleetLayoutCellDto> cells)
+    {
+        var byShip = cells.GroupBy(c => c.ShipTypeId);
+        var reconstructed = new List<PlacedShipDto>();
+        var visited = new HashSet<(int X, int Y)>();
+
+        foreach (var group in byShip)
+        {
+            foreach (var start in group)
+            {
+                var key = (start.X, start.Y);
+                if (!visited.Add(key))
+                    continue;
+
+                var component = new List<FleetLayoutCellDto>();
+                var queue = new Queue<FleetLayoutCellDto>();
+                queue.Enqueue(start);
+
+                while (queue.Count > 0)
+                {
+                    var cell = queue.Dequeue();
+                    component.Add(cell);
+
+                    foreach (var (nx, ny) in new[] { (cell.X - 1, cell.Y), (cell.X + 1, cell.Y), (cell.X, cell.Y - 1), (cell.X, cell.Y + 1) })
+                    {
+                        var neighbor = group.FirstOrDefault(c => c.X == nx && c.Y == ny);
+                        if (neighbor is null)
+                            continue;
+
+                        var nKey = (neighbor.X, neighbor.Y);
+                        if (!visited.Add(nKey))
+                            continue;
+
+                        queue.Enqueue(neighbor);
+                    }
+                }
+
+                if (component.Count == 0)
+                    continue;
+
+                var xs = component.Select(c => c.X).Distinct().ToList();
+                var ys = component.Select(c => c.Y).Distinct().ToList();
+                var vertical = xs.Count == 1;
+                if (!vertical && ys.Count != 1)
+                    continue;
+
+                reconstructed.Add(new PlacedShipDto
+                {
+                    ShipID = group.Key,
+                    StartX = vertical ? xs[0] : xs.Min(),
+                    StartY = vertical ? ys.Min() : ys[0],
+                    IsVertical = vertical
+                });
+            }
+        }
+
+        if (reconstructed.Count > 0)
+        {
+            _placementOrder.Clear();
+            _placementOrder.AddRange(reconstructed);
+        }
+    }
+
+    void ApplyFleetPlacementFromServer(FleetPlacementSyncMessage msg)
+    {
+        if (msg.Cells is null || msg.Cells.Count == 0)
+            return;
+
+        ApplyOwnFleetCellsFromSnapshot(msg.Cells);
 
         if (msg.Placements is { Count: > 0 })
         {
@@ -1067,6 +1403,7 @@ else
 
         SelectedShip = null;
         HoverCell = null;
+        RebuildPlacementCellMap();
     }
 
     void ApplyBattleSnapshotFromServer(YourBattleSnapshotMessage msg)
@@ -1077,40 +1414,42 @@ else
         _inBattle = true;
         _enemyIntel.Clear();
         _incomingOnOwn.Clear();
+        _targetGridFxPhase.Clear();
+        _ownFleetFxPhase.Clear();
+        _targetGridMissAnimMinUntil.Clear();
+        _ownFleetMissAnimMinUntil.Clear();
         if (msg.MyOutgoing is not null)
         {
             foreach (var s in msg.MyOutgoing)
+            {
                 _enemyIntel[(s.X, s.Y)] = s.Result;
+                ApplySettledFxForIntelCell(s.X, s.Y, s.Result, onTargetGrid: true);
+            }
         }
 
         if (msg.IncomingOnOwn is not null)
         {
             foreach (var s in msg.IncomingOnOwn)
-                _incomingOnOwn[(s.X, s.Y)] = s.Result;
-        }
-
-        if (msg.OwnFleet is { Count: > 0 })
-        {
-            if (fleetManifest is not null)
             {
-                var manifestIds = fleetManifest.Select(s => s.ShipID).ToHashSet();
-                foreach (var key in _occupyingShipId.Keys.ToList())
-                {
-                    if (_occupyingShipId.TryGetValue(key, out var sid) && manifestIds.Contains(sid))
-                        _occupyingShipId.Remove(key);
-                }
+                _incomingOnOwn[(s.X, s.Y)] = s.Result;
+                ApplySettledFxForIntelCell(s.X, s.Y, s.Result, onTargetGrid: false);
             }
-
-            foreach (var c in msg.OwnFleet)
-                _occupyingShipId[(c.X, c.Y)] = c.ShipTypeId;
-            _placedCount.Clear();
-            foreach (var c in msg.OwnFleet)
-                _placedCount[c.ShipTypeId] = _placedCount.GetValueOrDefault(c.ShipTypeId) + 1;
         }
+
+        ApplyOwnFleetCellsFromSnapshot(msg.OwnFleet);
+
+        if (msg.Placements is { Count: > 0 })
+        {
+            _placementOrder.Clear();
+            _placementOrder.AddRange(msg.Placements);
+        }
+        else if (msg.OwnFleet is { Count: > 0 })
+            TryReconstructPlacementsFromOwnFleet(msg.OwnFleet);
 
         _shotClockDeadlineUtc = msg.ShotClockDeadlineUtc != default
             ? msg.ShotClockDeadlineUtc
             : DateTimeOffset.UtcNow.AddSeconds(15);
+        RebuildPlacementCellMap();
         StartShotClockCountdown();
     }
 

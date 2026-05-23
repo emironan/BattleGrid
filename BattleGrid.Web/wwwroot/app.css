@@ -20,6 +20,29 @@
     --danger: #f04040;
     --radius: 4px;
     --font: 'Courier New', Courier, monospace;
+    --battle-cell-size: 64px;
+    --battle-grid-gap: 0;
+    --battle-cell-line: 1px;
+    --battle-axis-size: 28px;
+    --battle-grid-cols: 10;
+    --battle-grid-frame-padding: 12px;
+    /* axis + 10 cells (no gaps; lines are shared borders) */
+    --battle-grid-inner-width: calc(
+        var(--battle-axis-size) + var(--battle-grid-cols) * var(--battle-cell-size)
+    );
+    --battle-grid-inner-height: calc(
+        var(--battle-grid-cols) * var(--battle-cell-size) + var(--battle-axis-size)
+    );
+    --battle-grid-frame-width: calc(
+        var(--battle-grid-inner-width) + 2 * var(--battle-grid-frame-padding)
+    );
+    --battle-grid-frame-height: calc(
+        var(--battle-grid-inner-height) + 2 * var(--battle-grid-frame-padding)
+    );
+    --game-board-body-padding-x: 18px;
+    --game-board-card-width: calc(
+        var(--battle-grid-frame-width) + 2 * var(--game-board-body-padding-x)
+    );
 }
 
 /* ── Reset ─────────────────────────────── */
@@ -280,6 +303,17 @@ body {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
     gap: 16px;
+    align-items: stretch;
+}
+
+.cards-grid .card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.cards-grid .card-body {
+    flex: 1;
 }
 
     .cards-grid.cols-2 {
@@ -797,9 +831,14 @@ body {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
     gap: 16px;
+    align-items: stretch;
+    --ship-hull-slot-height: 88px;
 }
 
 .ship-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -884,6 +923,29 @@ body {
     font-size: 18px;
     font-weight: bold;
     color: var(--text);
+}
+
+.ship-card-hull-area {
+    flex: 1 1 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: var(--ship-hull-slot-height, 88px);
+    padding: 12px 16px;
+}
+
+.ship-card-hull-area .ship-dock-visual {
+    padding: 0;
+    width: auto;
+    max-width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.ship-card-panel {
+    flex-shrink: 0;
+    margin-top: auto;
 }
 
 .ship-grid-preview {
@@ -1045,21 +1107,35 @@ body {
 }
 
 /* ── Game session (placement UI) ─────────── */
+.container:has(.game-match-view) {
+    max-width: min(calc(2 * var(--game-board-card-width) + 20px + 48px), 100%);
+}
+
+.game-match-view {
+    min-width: 0;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
 .game-session-layout {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);
+    grid-template-columns: var(--game-board-card-width) auto;
     gap: 24px;
     align-items: start;
     margin-top: 16px;
+    width: fit-content;
+    max-width: 100%;
 }
 
 .game-battle-boards {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 16px;
+    grid-template-columns: repeat(2, var(--game-board-card-width));
+    gap: 20px;
     align-items: start;
+    justify-content: start;
     margin-top: 16px;
-    width: 100%;
+    width: fit-content;
+    max-width: 100%;
 }
 
 .placement-meta {
@@ -1076,7 +1152,9 @@ body {
 
 .post-match-card {
     margin-top: 20px;
-    max-width: 520px;
+    width: var(--game-board-card-width);
+    max-width: 100%;
+    box-sizing: border-box;
 }
 
 .post-match-headline {
@@ -1176,14 +1254,36 @@ body {
     border-color: rgba(255, 140, 140, 0.7) !important;
 }
 
-.game-board-card .card-body,
+.game-board-card:has(.battle-grid-frame),
+.game-board-card.game-board-card--sized {
+    width: var(--game-board-card-width);
+    max-width: 100%;
+    box-sizing: border-box;
+    overflow: visible;
+    flex-shrink: 0;
+}
+
+.game-board-card:has(.battle-grid-frame) .card-body,
+.game-board-card.game-board-card--sized .card-body {
+    padding: 16px var(--game-board-body-padding-x);
+    min-width: 0;
+    overflow: visible;
+    box-sizing: border-box;
+}
+
+.game-board-card:has(.battle-grid-frame) .card-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
 .game-dock-card .card-body {
     padding: 16px 18px;
     min-width: 0;
 }
 
-.game-board-card .card-body:has(.battle-grid-frame--fit) {
-    overflow-x: auto;
+.game-session-layout .game-dock-card {
+    width: max-content;
     max-width: 100%;
 }
 
@@ -1199,18 +1299,22 @@ body {
     display: block;
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    padding: 10px;
+    padding: var(--battle-grid-frame-padding);
     background: rgba(0,0,0,0.2);
     outline: none;
     user-select: none;
+    cursor: default;
+    width: var(--battle-grid-frame-width);
+    height: var(--battle-grid-frame-height);
+    min-width: var(--battle-grid-frame-width);
+    min-height: var(--battle-grid-frame-height);
+    box-sizing: border-box;
+    flex-shrink: 0;
 }
 
 .battle-grid-frame--fit {
-    width: 100%;
-    max-width: min(100%, 520px);
     margin-left: auto;
     margin-right: auto;
-    box-sizing: border-box;
 }
 
 .battle-grid-frame--frozen {
@@ -1221,26 +1325,29 @@ body {
 .battle-grid {
     display: flex;
     flex-direction: column;
-    gap: 3px;
-    width: 100%;
+    gap: var(--battle-grid-gap);
+    width: fit-content;
 }
 
 .battle-row {
     display: grid;
-    gap: 3px;
+    gap: var(--battle-grid-gap);
     align-items: stretch;
+    grid-template-columns: var(--battle-axis-size) repeat(var(--battle-grid-cols), var(--battle-cell-size));
 }
 
 .battle-row-cols {
-    grid-template-columns: minmax(1.5rem, 1.85rem) repeat(10, minmax(0, 1fr));
+    grid-template-columns: var(--battle-axis-size) repeat(var(--battle-grid-cols), var(--battle-cell-size));
 }
 
 .battle-row-footer {
-    margin-top: 1px;
+    margin-top: calc(-1 * var(--battle-cell-line));
 }
 
 .battle-row-footer .battle-corner {
-    min-height: 1.1rem;
+    width: var(--battle-axis-size);
+    height: var(--battle-axis-size);
+    min-height: var(--battle-axis-size);
 }
 
 .battle-axis--col {
@@ -1258,26 +1365,137 @@ body {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 11px;
+    width: var(--battle-axis-size);
+    font-size: 12px;
     font-weight: bold;
     color: var(--muted);
     letter-spacing: 0.06em;
 }
 
+.battle-row-footer .battle-axis--col {
+    width: var(--battle-cell-size);
+    height: var(--battle-axis-size);
+}
+
 .battle-cell {
-    width: 100%;
-    min-height: 0;
-    min-width: 0;
-    aspect-ratio: 1;
-    border-radius: 3px;
-    border: 1px solid var(--border);
+    position: relative;
+    overflow: hidden;
+    width: var(--battle-cell-size);
+    height: var(--battle-cell-size);
+    min-width: var(--battle-cell-size);
+    min-height: var(--battle-cell-size);
+    flex-shrink: 0;
+    margin-left: calc(-1 * var(--battle-cell-line));
+    margin-top: calc(-1 * var(--battle-cell-line));
+    border-radius: 0;
+    border: var(--battle-cell-line) solid var(--border);
     background: rgba(15, 36, 66, 0.85);
     box-sizing: border-box;
     cursor: default;
 }
 
-.battle-cell--selectable {
-    cursor: crosshair;
+/* Crosshair on battle grid cells only (not ship placement). */
+.game-battle-boards .battle-grid .battle-cell {
+    cursor: url("/battle/effects/crosshair.png") 25 25, crosshair;
+}
+
+.game-battle-boards .battle-grid-frame--frozen .battle-cell {
+    cursor: default;
+}
+
+.battle-cell__ship,
+.battle-cell__fx {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    pointer-events: none;
+    z-index: 1;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+}
+
+.battle-cell__fx {
+    z-index: 2;
+    width: 50px;
+    height: 50px;
+    left: 50%;
+    top: 50%;
+    right: auto;
+    bottom: auto;
+    transform: translate(-50%, -50%);
+    object-fit: contain;
+    pointer-events: none;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
+}
+
+/* Hull art is portrait (bow at top). Vertical: slice down the image height. Horizontal: same slice, rotate 90deg so bow faces +X from anchor. */
+.battle-cell__ship--hull-vert,
+.battle-cell__ship--hull-horiz {
+    background-size: 100% calc(var(--ship-len) * var(--battle-cell-size));
+    background-position: center calc(var(--ship-slice) * var(--battle-cell-size) * -1);
+    background-repeat: no-repeat;
+}
+
+.battle-cell__ship--hull-horiz {
+    transform: rotate(90deg);
+    transform-origin: center center;
+}
+
+.battle-cell__ship--hull-damaged {
+    filter: saturate(0.8) brightness(0.88);
+}
+
+.battle-cell__ship--hull-destroyed {
+    filter: saturate(0.55) brightness(0.7) grayscale(0.2);
+}
+
+.battle-cell--has-fx.battle-cell--intel-miss::before,
+.battle-cell--has-fx.battle-cell--intel-miss::after,
+.battle-cell--has-fx.battle-cell--incoming-miss::before,
+.battle-cell--has-fx.battle-cell--incoming-miss::after {
+    content: none;
+    display: none;
+}
+
+/* Shared 1px grid lines without doubling between adjacent cells */
+.battle-row-cols > .battle-axis {
+    margin-top: calc(-1 * var(--battle-cell-line));
+    margin-left: 0;
+    border-right: var(--battle-cell-line) solid var(--border);
+}
+
+.battle-grid > .battle-row-cols:first-child > .battle-axis,
+.battle-grid > .battle-row-cols:first-child > .battle-cell {
+    margin-top: 0;
+}
+
+.battle-row-cols > .battle-cell:nth-child(2) {
+    margin-left: 0;
+}
+
+.battle-row-footer > .battle-corner {
+    margin-left: 0;
+    margin-top: calc(-1 * var(--battle-cell-line));
+    border-top: var(--battle-cell-line) solid var(--border);
+    border-right: var(--battle-cell-line) solid var(--border);
+}
+
+.battle-row-footer > .battle-axis--col {
+    margin-left: calc(-1 * var(--battle-cell-line));
+    margin-top: calc(-1 * var(--battle-cell-line));
+    border-top: var(--battle-cell-line) solid var(--border);
+    border-radius: 0;
+}
+
+.game-battle-boards .battle-cell--selectable {
+    cursor: url("/battle/effects/crosshair.png") 25 25, crosshair;
+}
+
+.game-session-layout .battle-cell--selectable {
+    cursor: pointer;
 }
 
 .battle-cell--preview-ok {
@@ -1293,8 +1511,8 @@ body {
 }
 
 .battle-cell--placed {
-    background: rgba(0, 100, 160, 0.55);
-    border-color: rgba(0, 207, 255, 0.45);
+    background: linear-gradient(145deg, rgba(0, 40, 80, 0.45), rgba(10, 25, 50, 0.65));
+    border-color: rgba(0, 120, 180, 0.55);
 }
 
 .ship-tone-0 { background: rgba(0, 140, 180, 0.55) !important; }
@@ -1328,15 +1546,25 @@ body {
 }
 
 .game-dock-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+    gap: 12px;
+    align-items: start;
+}
+
+.game-dock-list-col {
     display: flex;
     flex-direction: column;
     gap: 12px;
-    max-height: min(70vh, 640px);
-    overflow-y: auto;
-    padding-right: 4px;
+    min-width: 0;
+    --ship-hull-slot-height: 88px;
 }
 
 .ship-dock-card {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    min-height: 280px;
     background: var(--bg-panel);
     border: 1px solid var(--border);
     border-radius: var(--radius);
@@ -1376,6 +1604,11 @@ body {
     font-size: 12px;
 }
 
+.ship-dock-card-panel {
+    flex-shrink: 0;
+    margin-top: auto;
+}
+
 .ship-dock-meta {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -1400,8 +1633,32 @@ body {
     padding: 10px 12px;
     display: flex;
     align-items: center;
-    gap: 2px;
-    flex-wrap: wrap;
+    gap: 0;
+    flex-wrap: nowrap;
+}
+
+/* Portrait hull PNG rotated 90° so the ship reads horizontally in dock/registry cards. */
+.ship-dock-hull-slot {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: calc(48px * var(--dock-hull-cells, 4));
+    height: 48px;
+    max-width: 100%;
+    flex-shrink: 0;
+}
+
+.ship-dock-hull {
+    width: 48px;
+    height: calc(48px * var(--dock-hull-cells, 4));
+    flex-shrink: 0;
+    transform: rotate(90deg);
+    transform-origin: center center;
+    background-size: contain;
+    background-position: center center;
+    background-repeat: no-repeat;
+    image-rendering: pixelated;
+    image-rendering: crisp-edges;
 }
 
 .ship-dock-footprint {
@@ -1435,6 +1692,25 @@ body {
 
 .game-session-status-sep {
     opacity: 0.5;
+}
+
+@media (max-width: 1580px) {
+    .game-battle-boards {
+        grid-template-columns: var(--game-board-card-width);
+        justify-items: start;
+    }
+}
+
+@media (max-width: 900px) {
+    .game-session-layout {
+        grid-template-columns: 1fr;
+        justify-items: center;
+        width: 100%;
+    }
+
+    .game-dock-list {
+        grid-template-columns: 1fr;
+    }
 }
 
 /* ── Responsive ─────────────────────────── */
@@ -1473,12 +1749,17 @@ body {
 
     .battle-row,
     .battle-row-cols {
-        gap: 2px;
+        gap: var(--battle-grid-gap);
     }
 
-    .battle-grid-frame--fit {
-        max-width: 100%;
-        padding: 6px;
+    .battle-grid-frame {
+        padding: 8px;
+    }
+
+    .game-battle-boards,
+    .game-session-layout {
+        justify-items: center;
+        width: 100%;
     }
 }
 
@@ -1547,7 +1828,7 @@ body {
 }
 
 .match-replay-page {
-    max-width: 1200px;
+    max-width: min(1560px, 100%);
 }
 
 .match-replay-header h1 {
@@ -1576,16 +1857,30 @@ body {
     margin-left: 0.35rem;
 }
 
-.match-replay-boards .battle-grid-frame--fit {
-    max-width: 100%;
+.match-replay-result {
+    margin-bottom: 1.25rem;
 }
 
-.admin-panel-page {
-    max-width: 960px;
+.match-replay-result-summary {
+    margin: 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    line-height: 1.45;
 }
 
-.admin-panel-grid {
-    align-items: start;
+.match-replay-result .post-match-headline + .match-replay-result-summary {
+    margin-top: 0.35rem;
+    font-size: 1rem;
+    font-weight: 500;
+}
+
+.match-replay-boards {
+    justify-content: start;
+}
+
+.match-replay-boards .game-board-card:has(.battle-grid-frame) {
+    margin-left: 0;
+    margin-right: 0;
 }
 
 .admin-panel-help {

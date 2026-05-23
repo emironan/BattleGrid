@@ -12,5 +12,6 @@ namespace BattleGrid.Application.Interfaces
         Task<string> HashPasswordAsync(int userId);
         //aaa Task<GeneralResponseDto> UserUpdateByUserAsync(UserUpdateUserRequestDto dto);
         //aaa Task<GeneralResponseDto> UserUpdateByAdminAsync(UserUpdateAdminRequestDto dto);
+        Task<bool> IsAdminAsync(int userId);
     }
 }

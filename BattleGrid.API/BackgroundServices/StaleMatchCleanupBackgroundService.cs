@@ -10,6 +10,7 @@ public sealed class StaleMatchCleanupBackgroundService : BackgroundService
 {
     private static readonly TimeSpan TickInterval = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan StaleThreshold = TimeSpan.FromHours(1);
+    private readonly TimeSpan StartupDelay = TimeSpan.FromMinutes(2);    // Background service starts 2 mins after the server starts running
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<StaleMatchCleanupBackgroundService> _logger;
@@ -25,6 +26,10 @@ public sealed class StaleMatchCleanupBackgroundService : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(TickInterval);
+
+        // Initial delay to allow the application to fully start
+        await Task.Delay(StartupDelay, stoppingToken);
+
         try
         {
             await RunCleanupAsync(stoppingToken);

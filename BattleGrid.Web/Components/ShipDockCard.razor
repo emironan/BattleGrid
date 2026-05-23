@@ -1,0 +1,140 @@
+@using BattleGrid.Contracts.ResponseDtos
+
+@using BattleGrid.Web.GameVisuals
+
+
+
+<div class="ship-dock-card @CssClass" @onclick="OnClick">
+
+    <div class="ship-card-header">
+
+        <span class="ship-name">@Ship.ShipName</span>
+
+        <span class="ship-id muted">#@Ship.ShipID · @RemainingCount/@Ship.MaxPerPlayer left</span>
+
+    </div>
+
+
+
+    <div class="ship-card-hull-area">
+
+        <div class="ship-dock-visual">
+            <div class="ship-dock-hull-slot" style="--dock-hull-cells: @Ship.Length">
+                <div class="ship-dock-hull" style="background-image: url('@HullUrl')"></div>
+            </div>
+        </div>
+
+    </div>
+
+
+
+    <div class="ship-dock-card-panel">
+
+        <div class="ship-dock-meta">
+
+            <div class="stat">
+
+                <span class="stat-label">LENGTH</span>
+
+                <span class="stat-value">@Ship.Length</span>
+
+            </div>
+
+            <div class="stat">
+
+                <span class="stat-label">WIDTH</span>
+
+                <span class="stat-value">@Ship.Width</span>
+
+            </div>
+
+            <div class="stat">
+
+                <span class="stat-label">CELLS</span>
+
+                <span class="stat-value">@(Ship.Length * Ship.Width)</span>
+
+            </div>
+
+            <div class="stat">
+
+                <span class="stat-label">MAX</span>
+
+                <span class="stat-value">@Ship.MaxPerPlayer</span>
+
+            </div>
+
+        </div>
+
+        <div class="ship-dock-footprint">
+
+            <span class="muted">FOOTPRINT (W×L)</span>
+
+            <div class="mini-grid">
+
+                @for (var r = 0; r < Ship.Width; r++)
+
+                {
+
+                    <div class="mini-row">
+
+                        @for (var c = 0; c < Ship.Length; c++)
+
+                        {
+
+                            <div class="mini-cell filled"></div>
+
+                        }
+
+                    </div>
+
+                }
+
+            </div>
+
+        </div>
+
+    </div>
+
+</div>
+
+
+
+@code {
+
+    [Parameter, EditorRequired] public ShipTypeListResponseDto Ship { get; set; } = null!;
+
+    [Parameter] public bool Selected { get; set; }
+
+    [Parameter] public bool Exhausted { get; set; }
+
+    [Parameter] public int RemainingCount { get; set; }
+
+    [Parameter] public EventCallback<ShipTypeListResponseDto> OnSelect { get; set; }
+
+
+
+    string ShipSlug => ShipVisualHelper.SlugFromShipName(Ship.ShipName);
+
+    string HullUrl => ShipVisualHelper.GetHullAssetUrl(ShipSlug);
+
+
+
+    string? CssClass =>
+
+        $"{(Selected ? "ship-dock-card--selected" : null)} {(Exhausted ? "ship-dock-card--exhausted" : null)}".Trim();
+
+
+
+    async Task OnClick()
+
+    {
+
+        if (!Exhausted)
+
+            await OnSelect.InvokeAsync(Ship);
+
+    }
+
+}
+

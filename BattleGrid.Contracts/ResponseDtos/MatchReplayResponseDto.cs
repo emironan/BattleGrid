@@ -7,6 +7,19 @@ public sealed class MatchReplayResponseDto
     public int Player2Id { get; init; }
     public string Player1UserName { get; init; } = string.Empty;
     public string Player2UserName { get; init; } = string.Empty;
+
+    /// <summary>User id of the winner when <see cref="Status"/> is <c>P1Won</c> or <c>P2Won</c>.</summary>
+    public int? WinnerUserId { get; init; }
+
+    /// <summary>Domain <see cref="BattleGrid.Domain.Enums.MatchStatus"/> value.</summary>
+    public int Status { get; init; }
+
+    /// <summary>Persisted finish reason from the match row (used to distinguish winning shot vs forfeit).</summary>
+    public string? FinishReason { get; init; }
+
+    /// <summary>Human-readable outcome for display after the final replay move.</summary>
+    public string ResultSummary { get; init; } = string.Empty;
+
     public IReadOnlyList<MatchReplayPlacementDto> Placements { get; init; } = Array.Empty<MatchReplayPlacementDto>();
     public IReadOnlyList<MatchReplayMoveDto> Moves { get; init; } = Array.Empty<MatchReplayMoveDto>();
 }

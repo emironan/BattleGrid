@@ -122,7 +122,7 @@ public class ReplayServices : IReplayServices
         var match = await _context.Match
             .AsNoTracking()
             .Where(m => m.MatchID == matchId)
-            .Select(m => new { m.MatchID, m.Player1ID, m.Player2ID })
+            .Select(m => new { m.MatchID, m.Player1ID, m.Player2ID, m.Status, m.FinishReason })
             .FirstOrDefaultAsync();
 
         if (match is null)
@@ -190,16 +190,71 @@ public class ReplayServices : IReplayServices
             })
             .ToListAsync();
 
+        var p1Name = FormatUserDisplayLabel(p1Row?.UserName ?? string.Empty, match.Player1ID);
+        var p2Name = FormatUserDisplayLabel(p2Row?.UserName ?? string.Empty, match.Player2ID);
+        var winnerUserId = match.Status switch
+        {
+            MatchStatus.P1Won => match.Player1ID,
+            MatchStatus.P2Won => match.Player2ID,
+            _ => (int?)null
+        };
+
         return new MatchReplayResponseDto
         {
             MatchId = match.MatchID,
             Player1Id = match.Player1ID,
             Player2Id = match.Player2ID,
-            Player1UserName = FormatUserDisplayLabel(p1Row?.UserName ?? string.Empty, match.Player1ID),
-            Player2UserName = FormatUserDisplayLabel(p2Row?.UserName ?? string.Empty, match.Player2ID),
+            Player1UserName = p1Name,
+            Player2UserName = p2Name,
+            WinnerUserId = winnerUserId,
+            Status = (int)match.Status,
+            FinishReason = match.FinishReason,
+            ResultSummary = BuildReplayResultSummary(
+                winnerUserId,
+                match.FinishReason,
+                match.Player1ID,
+                match.Player2ID,
+                p1Name,
+                p2Name),
             Placements = placements,
             Moves = moves
         };
+    }
+
+    private static string BuildReplayResultSummary(
+        int? winnerUserId,
+        string? finishReason,
+        int player1Id,
+        int player2Id,
+        string player1UserName,
+        string player2UserName)
+    {
+        if (winnerUserId is not int winnerId)
+            return "Match ended with no recorded winner.";
+
+        string Label(int userId) =>
+            userId == player1Id ? player1UserName : player2UserName;
+
+        var winnerLabel = Label(winnerId);
+
+        if (string.IsNullOrWhiteSpace(finishReason)
+            || finishReason.Contains("ships were destroyed", StringComparison.OrdinalIgnoreCase))
+        {
+            return $"Winning shot — {winnerLabel} won";
+        }
+
+        var leavingUserId = TryParseLeavingUserId(finishReason);
+        if (leavingUserId is int leaverId)
+        {
+            var leaverLabel = Label(leaverId);
+            if (finishReason.Contains("abandoned ship", StringComparison.OrdinalIgnoreCase))
+                return $"{leaverLabel} abandoned ship — {winnerLabel} won";
+            if (finishReason.Contains("forfeited", StringComparison.OrdinalIgnoreCase))
+                return $"{leaverLabel} forfeited — {winnerLabel} won";
+            return $"{leaverLabel} left — {winnerLabel} won";
+        }
+
+        return $"{winnerLabel} won";
     }
 
     private static string FormatUserDisplayLabel(string userName, int userId)

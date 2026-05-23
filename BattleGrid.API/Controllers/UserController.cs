@@ -22,6 +22,12 @@ public class UserController : ControllerBase
     [HttpGet("all")]
     public async Task<ActionResult> GetAllUsers()
     {
+        if (!User.TryGetAuthenticatedUserId(out var callerId))
+            return Unauthorized();
+
+        if (!await _userServices.IsAdminAsync(callerId))
+            return Forbid();
+
         try
         {
             var users = await _userServices.GetAllUsersAsync();

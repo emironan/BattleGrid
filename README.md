@@ -59,7 +59,10 @@
 						 		 *  and restore any necessary packages.
 						 		 */
 			cd BattleGrid.API	// This will move to the server backend project folder
-			dotnet run			/* Or preferably, choose the BattleGrid.API project 
+
+			dotnet run			/* "dotnet run --launch-profile https" to run the https version
+								 * 
+								 * Or preferably, choose the BattleGrid.API project 
 								 * as the startup project in VS and run it. This way
 						 	 	 *  you can choose between https, http or IIS Express.
 						 	 	 */
@@ -69,6 +72,8 @@
 
 		  If you run it via a `dotnet run` command, only http works. 
 			Open your browser and go to http://localhost:4744/swagger
+		  Run it with `dotnet run --launch-profile https` to get it working with https.
+		    Then, you can go to https://localhost:4743/swagger
 
 	---------------------------------------------------------------------------------------------------
 
@@ -79,12 +84,13 @@
 			and if the game end condition is detected properly.
 
 		  For this one, you do not need the server running. It is completely separate from APIs or Hubs.
-		  It just uses the /GameLogic to fire up a game.
+		  It just uses the BattleGrid.Domain/GameLogic to fire up a game.
 
-		  Again, open another terminal or do a `cd ..` in the first one
+		  Open a terminal
 
 			cd BattleGrid.Console	// Moves to the console app project folder
 			dotnet run				/* This will launch a new terminal window
+									 *  (or will launch it in the current terminal window)
 									 *	where you can play the game.
 									 */
 									 
@@ -101,13 +107,16 @@
 
 		  While the backend server is running on a terminal, 
 		   open a new terminal in the project's main folder.
-		  Assuming you followed the instructions to run the server, 
+		  Assuming you followed the instructions to start the server, 
 		   Web project is also built and ready.
 
 		  cd BattleGrid.Web
 		  dotnet run
 
-		  Then go to http://localhost:4745 and the home page will greet you. 
+		  Then go to http://localhost:4746 and the home page will greet you. 
+		    Or run it with `dotnet run --launch-profile https` and
+			go to https://localhost:4745
+
 		  Try and test it.
 
 		  Test what happens if you:

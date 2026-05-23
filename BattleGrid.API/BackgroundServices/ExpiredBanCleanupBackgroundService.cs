@@ -8,6 +8,7 @@ namespace BattleGrid.API.BackgroundServices;
 public sealed class ExpiredBanCleanupBackgroundService : BackgroundService
 {
     private static readonly TimeSpan TickInterval = TimeSpan.FromMinutes(1);
+    private readonly TimeSpan StartupDelay = TimeSpan.FromMinutes(1);    // Background service starts 1 min after the server starts running
 
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<ExpiredBanCleanupBackgroundService> _logger;
@@ -22,6 +23,10 @@ public sealed class ExpiredBanCleanupBackgroundService : BackgroundService
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         using var timer = new PeriodicTimer(TickInterval);
+
+        // Initial delay to allow the application to fully start
+        await Task.Delay(StartupDelay, stoppingToken);
+
         try
         {
             await RunCleanupAsync(stoppingToken);

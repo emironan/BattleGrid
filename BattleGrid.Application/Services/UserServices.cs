@@ -89,6 +89,12 @@ namespace BattleGrid.Application.Services
         //aaa TODO: UserUpdateByUserAsync
         //aaa TODO: UserUpdateByAdminAsync
 
+        public async Task<bool> IsAdminAsync(int userId)
+        {
+            var user = await GetByIdAsync(userId);
+            return user?.IsAdmin ?? false;
+        }
+
         private static UserResponseDto MapToResponseDto(User user)
         {
             return new UserResponseDto

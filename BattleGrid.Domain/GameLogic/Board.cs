@@ -98,6 +98,21 @@ public class Board
         throw new InvalidOperationException("No ship found at the given coordinate.");
     }
 
+    public bool TryGetShipIdAt(int x, int y, out int shipId) =>
+        _shipMap.TryGetValue((x, y), out shipId);
+
+    public IReadOnlyList<Coordinate> GetCoordinatesForShip(int shipId)
+    {
+        var list = new List<Coordinate>();
+        foreach (var (cell, sid) in _shipMap)
+        {
+            if (sid == shipId)
+                list.Add(new Coordinate(cell.x, cell.y));
+        }
+
+        return list;
+    }
+
     public CellState CellStateAt(Coordinate coord)
     {
         return _grid[coord.X, coord.Y];

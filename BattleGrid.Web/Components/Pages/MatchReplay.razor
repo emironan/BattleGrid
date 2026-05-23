@@ -31,7 +31,7 @@ else if (_errorMessage is { } loadErr)
 }
 else if (_replay is { } replay)
 {
-    <div class="match-replay-page">
+    <div class="match-replay-page game-match-view">
         <div class="page-header match-replay-header">
             <h1><span class="accent">◈</span> MATCH REPLAY #@replay.MatchId@(_isAdminView ? " (admin)" : "")</h1>
             <p class="muted">@GetMatchSubtitle()</p>
@@ -84,6 +84,30 @@ else if (_replay is { } replay)
             </div>
         </div>
 
+        @if (IsReplayComplete)
+        {
+            <div class="card match-replay-result post-match-card">
+                <div class="card-header">
+                    <span class="card-icon">⚑</span>
+                    <span class="card-label">MATCH RESULT</span>
+                </div>
+                <div class="card-body">
+                    @if (!_isAdminView && Auth.CurrentUser is { } me && replay.WinnerUserId is { } winnerId)
+                    {
+                        var viewerWon = winnerId == me.UserID;
+                        <p class="post-match-headline @(viewerWon ? "post-match-headline--victory" : "post-match-headline--defeat")">
+                            @(viewerWon ? "Victory" : "Defeat")
+                        </p>
+                        <p class="match-replay-result-summary muted">@replay.ResultSummary</p>
+                    }
+                    else
+                    {
+                        <p class="match-replay-result-summary">@replay.ResultSummary</p>
+                    }
+                </div>
+            </div>
+        }
+
         <div class="game-battle-boards match-replay-boards">
             <div class="card game-board-card">
                 <div class="card-header">
@@ -94,7 +118,7 @@ else if (_replay is { } replay)
                     <ReplayBoardGrid BoardOwnerId="_viewerBoardId"
                                      Replay="replay"
                                      RevealedMoveCount="_revealedMoveCount"
-                                     Ships="@GetShipsFor(_viewerBoardId)" />
+                                     ShipNamesById="_shipNamesById" />
                 </div>
             </div>
 
@@ -110,7 +134,7 @@ else if (_replay is { } replay)
                     <ReplayBoardGrid BoardOwnerId="opponentBoardId"
                                      Replay="replay"
                                      RevealedMoveCount="_revealedMoveCount"
-                                     Ships="@GetShipsFor(opponentBoardId)" />
+                                     ShipNamesById="_shipNamesById" />
                 </div>
             </div>
         </div>
@@ -135,7 +159,11 @@ else if (_replay is { } replay)
     bool _autoPlaying;
     CancellationTokenSource? _autoCts;
 
-    readonly Dictionary<int, Dictionary<(int X, int Y), int>> _shipsByPlayer = new();
+    Dictionary<int, string> _shipNamesById = new();
+
+    bool IsReplayComplete =>
+        _replay is { Moves.Count: > 0 } replay
+        && _revealedMoveCount >= replay.Moves.Count;
 
     protected override void OnInitialized()
     {
@@ -197,44 +225,13 @@ else if (_replay is { } replay)
         _viewerBoardId = _isAdminView
             ? dto.Player1Id
             : ResolveViewerBoardId(dto, Auth.CurrentUser.UserID);
-        BuildShipMaps(dto);
+        var shipTypes = await Api.GetShipTypesAsync();
+        _shipNamesById = shipTypes?
+            .ToDictionary(s => s.ShipID, s => s.ShipName)
+            ?? new Dictionary<int, string>();
         _revealedMoveCount = 0;
         await InvokeAsync(StateHasChanged);
     }
-
-    void BuildShipMaps(MatchReplayResponseDto replay)
-    {
-        _shipsByPlayer.Clear();
-        foreach (var p in replay.Placements)
-        {
-            var length = p.Length > 0 ? p.Length : 1;
-            var width = p.Width > 0 ? p.Width : 1;
-            if (!ShipPlacementHelper.TryGenerateRectangle(
-                    new Coordinate(p.StartX, p.StartY),
-                    length,
-                    width,
-                    p.IsVertical,
-                    out var cells))
-            {
-                continue;
-            }
-
-            if (!_shipsByPlayer.TryGetValue(p.PlayerId, out var map))
-            {
-                map = new Dictionary<(int X, int Y), int>();
-                _shipsByPlayer[p.PlayerId] = map;
-            }
-
-            foreach (var c in cells)
-                map[(c.X, c.Y)] = p.ShipId;
-        }
-    }
-
-
-    IReadOnlyDictionary<(int X, int Y), int> GetShipsFor(int boardOwnerId) =>
-        _shipsByPlayer.TryGetValue(boardOwnerId, out var map)
-            ? map
-            : new Dictionary<(int X, int Y), int>();
 
     async Task PreviousMoveAsync()
     {

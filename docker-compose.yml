@@ -31,8 +31,8 @@ services:
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__BattleGridDB: "Host=db;Port=5432;Database=BattleGridDB;Username=postgres;Password=1234;Include Error Detail=true"
       Jwt__Secret: "LongAndSecureEnoughSigningKeyForBattleGrid321!"
-      Jwt__Issuer: "BattleGrid_DockerLocal_Server"
-      Jwt__Audience: "BattleGrid_DockerLocal_User"
+      Jwt__Issuer: "BattleGrid_Server"
+      Jwt__Audience: "BattleGrid_User"
     depends_on:
       db:
         condition: service_healthy
