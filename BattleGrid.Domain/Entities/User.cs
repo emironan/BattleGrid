@@ -13,5 +13,7 @@ public sealed class User
     public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow.ToUniversalTime();
     public DateTimeOffset? LastUpdatedAt { get; set; }
+    public DateTimeOffset? LastEmailChangeAt { get; set; }
+    public DateTimeOffset? LastUserNameChangeAt { get; set; }
     public string? UpdateReason { get; set; }
 }

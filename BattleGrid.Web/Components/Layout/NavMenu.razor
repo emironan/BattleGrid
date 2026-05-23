@@ -1,4 +1,4 @@
-﻿@implements IDisposable
+@implements IDisposable
 @inject AuthStateService Auth
 @inject NavigationManager Nav
 @inject ActiveMatchSession MatchSession
@@ -31,6 +31,7 @@
             @if (!MatchSession.IsLocked)
             {
                 <NavLink href="/dashboard" class="nav-link">DASHBOARD</NavLink>
+                <NavLink href="/settings" class="nav-link">SETTINGS</NavLink>
                 <NavLink href="/match-history" class="nav-link">HISTORY</NavLink>
                 @if (Auth.CurrentUser?.IsAdmin == true)
                 {

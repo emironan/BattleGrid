@@ -1,0 +1,356 @@
+@page "/settings"
+@implements IAsyncDisposable
+@inject AuthStateService Auth
+@inject NavigationManager Nav
+@inject ApiService Api
+
+<PageTitle>Account Settings - BattleGrid</PageTitle>
+
+@if (!Auth.IsInitialized)
+{
+    <div class="loading-screen"><p class="muted">Restoring session...</p></div>
+}
+else if (!Auth.IsLoggedIn)
+{
+    <div class="loading-screen"><p class="muted">Redirecting to login...</p></div>
+}
+else if (Auth.CurrentUser is not { IsActive: true } me)
+{
+    <div class="page-header">
+        <h1><span class="accent">◈</span> ACCOUNT SETTINGS</h1>
+    </div>
+    <div class="alert alert-danger">
+        <span>✘</span> This account is deactivated. Settings cannot be changed.
+    </div>
+    <a href="/dashboard" class="btn btn-outline mt-sm">Back to dashboard</a>
+}
+else
+{
+    <div class="settings-page">
+        <div class="page-header">
+            <h1><span class="accent">◈</span> ACCOUNT SETTINGS</h1>
+            <p class="muted">Confirm changes with your current password</p>
+        </div>
+
+        <div class="settings-grid">
+            <div class="card settings-card">
+                <div class="card-header">
+                    <span class="card-icon">✉</span>
+                    <span class="card-label">EMAIL</span>
+                </div>
+                <div class="card-body">
+                    <p class="muted settings-current">Current: <strong>@me.Email</strong></p>
+                    <p class="settings-limit-notice" role="note">Can only be changed once per month.</p>
+                    @if (!string.IsNullOrEmpty(_emailError))
+                    {
+                        <div class="alert alert-danger"><span>✘</span> @_emailError</div>
+                    }
+                    @if (!string.IsNullOrEmpty(_emailSuccess))
+                    {
+                        <div class="alert alert-success"><span>✔</span> @_emailSuccess</div>
+                    }
+                    <div class="form-group">
+                        <label class="form-label">NEW EMAIL</label>
+                        <input class="form-control" type="email" @bind="_emailModel.NewEmail" disabled="@_emailSaving" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">PASSWORD</label>
+                        <input class="form-control" type="password" placeholder="Confirm with your password" @bind="_emailModel.Password" disabled="@_emailSaving" />
+                    </div>
+                    <button type="button" class="btn btn-primary btn-full" disabled="@_emailSaving" @onclick="SaveEmailAsync">
+                        @(_emailSaving ? "SAVING..." : "UPDATE EMAIL")
+                    </button>
+                </div>
+            </div>
+
+            <div class="card settings-card">
+                <div class="card-header">
+                    <span class="card-icon">👤</span>
+                    <span class="card-label">USERNAME</span>
+                </div>
+                <div class="card-body">
+                    <p class="muted settings-current">Current: <strong>@me.UserName</strong></p>
+                    <p class="settings-limit-notice" role="note">Can only be changed once per month.</p>
+                    @if (!string.IsNullOrEmpty(_usernameError))
+                    {
+                        <div class="alert alert-danger"><span>✘</span> @_usernameError</div>
+                    }
+                    @if (!string.IsNullOrEmpty(_usernameSuccess))
+                    {
+                        <div class="alert alert-success"><span>✔</span> @_usernameSuccess</div>
+                    }
+                    <div class="form-group">
+                        <label class="form-label">NEW USERNAME</label>
+                        <input class="form-control" placeholder="Letters, numbers, and underscores" @bind="_usernameModel.NewUserName" disabled="@_usernameSaving" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">PASSWORD</label>
+                        <input class="form-control" type="password" placeholder="Confirm with your password" @bind="_usernameModel.Password" disabled="@_usernameSaving" />
+                    </div>
+                    <button type="button" class="btn btn-primary btn-full" disabled="@_usernameSaving" @onclick="SaveUsernameAsync">
+                        @(_usernameSaving ? "SAVING..." : "UPDATE USERNAME")
+                    </button>
+                </div>
+            </div>
+
+            <div class="card settings-card">
+                <div class="card-header">
+                    <span class="card-icon">🔒</span>
+                    <span class="card-label">PASSWORD</span>
+                </div>
+                <div class="card-body">
+                    @if (!string.IsNullOrEmpty(_passwordError))
+                    {
+                        <div class="alert alert-danger"><span>✘</span> @_passwordError</div>
+                    }
+                    @if (!string.IsNullOrEmpty(_passwordSuccess))
+                    {
+                        <div class="alert alert-success"><span>✔</span> @_passwordSuccess</div>
+                    }
+                    <div class="form-group">
+                        <label class="form-label">CURRENT PASSWORD</label>
+                        <input class="form-control" type="password" @bind="_passwordModel.OldPassword" disabled="@_passwordSaving" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">NEW PASSWORD</label>
+                        <input class="form-control" type="password" @bind="_passwordModel.NewPassword" disabled="@_passwordSaving" />
+                    </div>
+                    <div class="form-group">
+                        <label class="form-label">CONFIRM NEW PASSWORD</label>
+                        <input class="form-control" type="password" @bind="_confirmNewPassword" disabled="@_passwordSaving" />
+                    </div>
+                    <button type="button" class="btn btn-primary btn-full" disabled="@_passwordSaving" @onclick="SavePasswordAsync">
+                        @(_passwordSaving ? "SAVING..." : "UPDATE PASSWORD")
+                    </button>
+                </div>
+            </div>
+
+            <div class="card settings-card settings-delete-card card-danger">
+                <div class="card-header">
+                    <span class="card-icon">⚠</span>
+                    <span class="card-label">DELETE ACCOUNT</span>
+                </div>
+                <div class="card-body">
+                    <p class="settings-delete-copy muted">
+                        Your account will be deactivated. You will not be able to log in again, but your match history, stats, and ban history will remain on record.
+                    </p>
+                    @if (!string.IsNullOrEmpty(_deleteError))
+                    {
+                        <div class="alert alert-danger"><span>✘</span> @_deleteError</div>
+                    }
+                    @if (_showDeleteConfirm)
+                    {
+                        <div class="settings-delete-confirm" role="alertdialog" aria-labelledby="delete-confirm-title">
+                            <p id="delete-confirm-title" class="settings-delete-confirm-title">Are you sure?</p>
+                            <p class="muted settings-delete-confirm-copy">This action can not be undone. Your account will be deactivated and you will be signed out immediately!</p>
+                            <div class="settings-delete-confirm-actions">
+                                <button type="button" class="btn btn-outline btn-full" disabled="@_deleteSaving" @onclick="CancelDeleteConfirm">CANCEL</button>
+                                <button type="button" class="btn btn-danger btn-full" disabled="@_deleteSaving" @onclick="ConfirmDeleteAccountAsync">
+                                    @(_deleteSaving ? "DELETING..." : "YES, DELETE MY ACCOUNT")
+                                </button>
+                            </div>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="form-group">
+                            <label class="form-label">PASSWORD</label>
+                            <input class="form-control" type="password" placeholder="Confirm with your password" @bind="_deletePassword" disabled="@_deleteSaving" />
+                        </div>
+                        <button type="button" class="btn btn-danger btn-full" disabled="@_deleteSaving" @onclick="RequestDeleteConfirm">
+                            DELETE ACCOUNT
+                        </button>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <a href="/dashboard" class="btn btn-outline mt-sm">← Back to dashboard</a>
+    </div>
+}
+
+@code {
+    ChangeEmailRequestDto _emailModel = new();
+    ChangeUsernameRequestDto _usernameModel = new();
+    PasswordUpdateRequestDto _passwordModel = new();
+    string _confirmNewPassword = string.Empty;
+
+    string? _emailError;
+    string? _emailSuccess;
+    string? _usernameError;
+    string? _usernameSuccess;
+    string? _passwordError;
+    string? _passwordSuccess;
+    string? _deleteError;
+
+    bool _emailSaving;
+    bool _usernameSaving;
+    bool _passwordSaving;
+    bool _deleteSaving;
+    bool _showDeleteConfirm;
+    string _deletePassword = string.Empty;
+
+    protected override void OnInitialized()
+    {
+        Auth.OnChange += OnAuthChanged;
+        if (Auth.IsInitialized && !Auth.IsLoggedIn)
+            Nav.NavigateTo("/login");
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn)
+            Nav.NavigateTo("/login");
+    }
+
+    async Task SaveEmailAsync()
+    {
+        _emailError = null;
+        _emailSuccess = null;
+
+        if (string.IsNullOrWhiteSpace(_emailModel.NewEmail) || string.IsNullOrWhiteSpace(_emailModel.Password))
+        {
+            _emailError = "New email and password are required.";
+            return;
+        }
+
+        _emailSaving = true;
+        var (ok, message, user) = await Api.ChangeEmailAsync(_emailModel);
+        _emailSaving = false;
+
+        if (!ok)
+        {
+            _emailError = message;
+            return;
+        }
+
+        _emailSuccess = message;
+        _emailModel.Password = string.Empty;
+        if (user is not null)
+            await Auth.UpdateCurrentUserAsync(user);
+    }
+
+    async Task SaveUsernameAsync()
+    {
+        _usernameError = null;
+        _usernameSuccess = null;
+
+        if (string.IsNullOrWhiteSpace(_usernameModel.NewUserName) || string.IsNullOrWhiteSpace(_usernameModel.Password))
+        {
+            _usernameError = "New user name and password are required.";
+            return;
+        }
+
+        _usernameSaving = true;
+        var (ok, message, user) = await Api.ChangeUsernameAsync(_usernameModel);
+        _usernameSaving = false;
+
+        if (!ok)
+        {
+            _usernameError = message;
+            return;
+        }
+
+        _usernameSuccess = message;
+        _usernameModel.Password = string.Empty;
+        if (user is not null)
+            await Auth.UpdateCurrentUserAsync(user);
+    }
+
+    async Task SavePasswordAsync()
+    {
+        _passwordError = null;
+        _passwordSuccess = null;
+
+        if (string.IsNullOrWhiteSpace(_passwordModel.OldPassword)
+            || string.IsNullOrWhiteSpace(_passwordModel.NewPassword))
+        {
+            _passwordError = "Current and new password are required.";
+            return;
+        }
+
+        if (_passwordModel.NewPassword != _confirmNewPassword)
+        {
+            _passwordError = "New passwords do not match.";
+            return;
+        }
+
+        _passwordSaving = true;
+        var (ok, message) = await Api.ChangePasswordAsync(_passwordModel);
+        _passwordSaving = false;
+
+        if (!ok)
+        {
+            _passwordError = message;
+            return;
+        }
+
+        _passwordSuccess = message;
+        _passwordModel.OldPassword = string.Empty;
+        _passwordModel.NewPassword = string.Empty;
+        _confirmNewPassword = string.Empty;
+    }
+
+    void RequestDeleteConfirm()
+    {
+        _deleteError = null;
+
+        if (string.IsNullOrWhiteSpace(_deletePassword))
+        {
+            _deleteError = "Password is required.";
+            return;
+        }
+
+        _showDeleteConfirm = true;
+    }
+
+    void CancelDeleteConfirm()
+    {
+        _showDeleteConfirm = false;
+        _deleteError = null;
+    }
+
+    async Task ConfirmDeleteAccountAsync()
+    {
+        _deleteError = null;
+        _deleteSaving = true;
+
+        var (ok, message) = await Api.DeactivateAccountAsync(new DeactivateAccountRequestDto
+        {
+            Password = _deletePassword
+        });
+        _deleteSaving = false;
+
+        if (!ok)
+        {
+            _deleteError = message;
+            _showDeleteConfirm = false;
+            return;
+        }
+
+        await Auth.LogoutAsync();
+        Nav.NavigateTo("/login");
+    }
+
+    private void OnAuthChanged()
+    {
+        _ = InvokeAsync(() =>
+        {
+            if (Auth.IsInitialized && !Auth.IsLoggedIn)
+                Nav.NavigateTo("/login");
+            else
+                StateHasChanged();
+            return Task.CompletedTask;
+        });
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Auth.OnChange -= OnAuthChanged;
+        return ValueTask.CompletedTask;
+    }
+}

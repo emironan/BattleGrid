@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Serialization;
 
 namespace BattleGrid.Contracts.RequestDtos
@@ -39,9 +39,6 @@ namespace BattleGrid.Contracts.RequestDtos
         [Required]
         [JsonIgnore]
         public int UserID { get; set; }
-
-        [Required]
-        public string Email { get; set; } = string.Empty;
 
         [Required]
         public string OldPassword { get; set; } = string.Empty;

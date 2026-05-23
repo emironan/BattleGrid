@@ -240,7 +240,7 @@ public class ReplayServices : IReplayServices
         if (string.IsNullOrWhiteSpace(finishReason)
             || finishReason.Contains("ships were destroyed", StringComparison.OrdinalIgnoreCase))
         {
-            return $"Winning shot — {winnerLabel} won";
+            return $"Winning shot - {winnerLabel} won";
         }
 
         var leavingUserId = TryParseLeavingUserId(finishReason);
@@ -248,10 +248,10 @@ public class ReplayServices : IReplayServices
         {
             var leaverLabel = Label(leaverId);
             if (finishReason.Contains("abandoned ship", StringComparison.OrdinalIgnoreCase))
-                return $"{leaverLabel} abandoned ship — {winnerLabel} won";
+                return $"{leaverLabel} abandoned ship - {winnerLabel} won";
             if (finishReason.Contains("forfeited", StringComparison.OrdinalIgnoreCase))
-                return $"{leaverLabel} forfeited — {winnerLabel} won";
-            return $"{leaverLabel} left — {winnerLabel} won";
+                return $"{leaverLabel} forfeited - {winnerLabel} won";
+            return $"{leaverLabel} left - {winnerLabel} won";
         }
 
         return $"{winnerLabel} won";

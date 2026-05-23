@@ -87,6 +87,43 @@ public sealed class AdminController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Operator profile with all season stat rows (admin only).</summary>
+    [HttpGet("players/{userId:int}/profile")]
+    public async Task<ActionResult<AdminUserProfileResponseDto>> GetPlayerProfile(int userId)
+    {
+        if (!User.TryGetAuthenticatedUserId(out var adminUserId))
+            return Unauthorized();
+
+        if (!await CallerIsAdminAsync(adminUserId))
+            return Forbid();
+
+        var profile = await _userServices.GetAdminUserProfileAsync(userId);
+        if (profile is null)
+            return NotFound();
+
+        return Ok(profile);
+    }
+
+    /// <summary>Recent match history for an operator (admin only; end kinds from that player's perspective).</summary>
+    [HttpGet("players/{userId:int}/match-history")]
+    public async Task<ActionResult<MatchHistoryResponseDto>> GetPlayerMatchHistory(
+        int userId,
+        [FromServices] IReplayServices replay,
+        [FromQuery] int limit = 20)
+    {
+        if (!User.TryGetAuthenticatedUserId(out var adminUserId))
+            return Unauthorized();
+
+        if (!await CallerIsAdminAsync(adminUserId))
+            return Forbid();
+
+        if (await _userServices.GetByIdAsync(userId) is null)
+            return NotFound();
+
+        var dto = await replay.GetRecentMatchHistoryAsync(userId, limit);
+        return Ok(dto);
+    }
+
     /// <summary> Replay data for any match with a decisive outcome (admin only). </summary>
     [HttpGet("matches/{matchId:int}/replay")]
     public async Task<ActionResult<MatchReplayResponseDto>> GetMatchReplay(

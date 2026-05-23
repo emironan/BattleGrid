@@ -1,0 +1,22 @@
+@if (User is { } u)
+{
+    @if (!u.IsActive)
+    {
+        <span class="badge badge-warning">DELETED</span>
+    }
+    else if (u.IsBanned)
+    {
+        <span class="badge badge-danger">BANNED</span>
+        <span class="operator-ban-detail"><OperatorBanStatusDetail Status="BanStatus" /></span>
+    }
+    else
+    {
+        <span class="badge badge-success">ACTIVE</span>
+    }
+}
+
+@code {
+    [Parameter] public UserResponseDto? User { get; set; }
+
+    [Parameter] public UserBanStatusResponseDto? BanStatus { get; set; }
+}

@@ -1,0 +1,393 @@
+@page "/users/{UserId:int}"
+@implements IAsyncDisposable
+@inject AuthStateService Auth
+@inject NavigationManager Nav
+@inject ApiService Api
+@using BattleGrid.Domain.Enums
+
+<PageTitle>@( _profile?.User.UserName ?? "Operator Profile") - BattleGrid</PageTitle>
+
+@if (!Auth.IsInitialized)
+{
+    <div class="loading-screen">
+        <p class="muted">Restoring session...</p>
+    </div>
+}
+else if (!Auth.IsLoggedIn)
+{
+    <div class="loading-screen">
+        <p class="muted">Redirecting to login...</p>
+    </div>
+}
+else if (Auth.CurrentUser?.IsAdmin != true)
+{
+    <div class="page-header">
+        <h1><span class="accent">◈</span> ACCESS DENIED</h1>
+    </div>
+    <div class="alert alert-danger">
+        <span>✘</span> Administrator privileges are required to view this page.
+    </div>
+    <a href="/dashboard" class="btn btn-outline mt-sm">Back to dashboard</a>
+}
+else if (_loading)
+{
+    <div class="loading-state">
+        <div class="radar-ping"></div>
+        <p class="muted">Loading operator profile...</p>
+    </div>
+}
+else if (_errorMessage is { } err)
+{
+    <div class="page-header user-profile-header">
+        <h1><span class="accent">◈</span> OPERATOR PROFILE</h1>
+    </div>
+    <div class="alert alert-danger"><span>✘</span> @err</div>
+    <a href="/users" class="btn btn-outline mt-sm">Back to personnel</a>
+}
+else if (_profile is { } profile)
+{
+    <div class="user-profile-page">
+        <div class="page-header user-profile-header">
+            <h1><span class="accent">◈</span> @ResolveDisplayName(profile.User)</h1>
+            <p class="muted">Operator #@profile.User.UserID · global season #@profile.GlobalCurrentSeasonNo</p>
+        </div>
+
+        <div class="user-profile-toolbar">
+            <a href="/users" class="btn btn-outline btn-sm">← Back to personnel</a>
+        </div>
+
+        <div class="cards-grid user-profile-grid">
+            <div class="card user-profile-details-card">
+                <div class="card-header">
+                    <span class="card-icon">👤</span>
+                    <span class="card-label">OPERATOR DETAILS</span>
+                </div>
+                <div class="card-body">
+                    <table class="info-table">
+                        <tr>
+                            <td class="info-key">USER ID</td>
+                            <td class="info-val">#@profile.User.UserID</td>
+                        </tr>
+                        <tr>
+                            <td class="info-key">USERNAME</td>
+                            <td class="info-val">@ResolveDisplayName(profile.User)</td>
+                        </tr>
+                        <tr>
+                            <td class="info-key">EMAIL</td>
+                            <td class="info-val">@profile.User.Email</td>
+                        </tr>
+                        <tr>
+                            <td class="info-key">ROLE</td>
+                            <td class="info-val">
+                                @if (profile.User.IsAdmin)
+                                {
+                                    <span class="badge badge-admin">ADMIN</span>
+                                }
+                                else
+                                {
+                                    <span class="badge badge-player">PLAYER</span>
+                                }
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="info-key">STATUS</td>
+                            <td class="info-val">
+                                <OperatorAccountStatus User="profile.User" BanStatus="profile.BanStatus" />
+                            </td>
+                        </tr>
+                    </table>
+                </div>
+            </div>
+
+            <div class="card user-profile-season-card">
+                <div class="card-header user-profile-season-header">
+                    <span class="card-icon">📊</span>
+                    <span class="card-label">SEASON RECORDS</span>
+                    <span class="muted user-profile-season-caption">Current + 2 prior seasons</span>
+                </div>
+                <div class="card-body">
+                    @if (profile.SeasonStats.Count == 0)
+                    {
+                        <p class="muted">No competitive season information on record for this operator.</p>
+                    }
+                    else
+                    {
+                        <div class="table-wrapper">
+                            <table class="data-table user-profile-season-table">
+                                <thead>
+                                    <tr>
+                                        <th>SEASON</th>
+                                        <th class="user-profile-season-num">RATING</th>
+                                        <th class="user-profile-season-num">SEASON PEAK</th>
+                                        <th class="user-profile-season-num">PLAYED</th>
+                                        <th class="user-profile-season-num">WON</th>
+                                        <th class="user-profile-season-num">WIN RATE</th>
+                                        <th class="user-profile-season-num">LAST UPDATED</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var s in profile.SeasonStats)
+                                    {
+                                        <tr class="@(s.SeasonNo == profile.GlobalCurrentSeasonNo ? "user-profile-season-row--current" : "")">
+                                            <td>
+                                                #@s.SeasonNo
+                                                @if (s.SeasonNo == profile.GlobalCurrentSeasonNo)
+                                                {
+                                                    <span class="badge badge-success user-profile-season-current">CURRENT</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge badge-player user-profile-season-past">PAST</span>
+                                                }
+                                            </td>
+                                            <td class="user-profile-season-num">@s.Rating</td>
+                                            <td class="user-profile-season-num">@s.HighestRating</td>
+                                            <td class="user-profile-season-num">@s.MatchesPlayed</td>
+                                            <td class="user-profile-season-num">@s.MatchesWon</td>
+                                            <td class="user-profile-season-num">@s.WinRate.ToString("0.##")%</td>
+                                            <td class="user-profile-season-num muted user-profile-season-updated">
+                                                @(s.LastUpdatedAt?.UtcDateTime.ToString("yyyy-MM-dd") ?? "-")
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        @if (!profile.SeasonStats.Any(s => s.SeasonNo == profile.GlobalCurrentSeasonNo))
+                        {
+                            <p class="muted user-profile-season-note">
+                                No row for the current global season yet - a row is created when this operator logs in.
+                            </p>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+
+        <div class="card user-profile-history-card">
+            <div class="card-header">
+                <span class="card-icon">⚔</span>
+                <span class="card-label">MATCH HISTORY</span>
+            </div>
+            <div class="card-body">
+                @if (_historyLoading)
+                {
+                    <p class="muted">Loading match records...</p>
+                }
+                else if (_historyError is { } historyErr)
+                {
+                    <div class="alert alert-danger"><span>✘</span> @historyErr</div>
+                }
+                else if (_matches.Count == 0)
+                {
+                    <div class="alert alert-info">No completed matches on record for this operator.</div>
+                }
+                else
+                {
+                    <div class="table-toolbar">
+                        <span class="muted">Last @MaxHistoryMatches matches · @ResolveDisplayName(profile.User)'s perspective</span>
+                        <button type="button" class="btn btn-outline btn-sm" @onclick="ReloadHistoryAsync">↻ REFRESH</button>
+                    </div>
+                    <div class="table-wrapper">
+                        <table class="data-table match-history-table">
+                            <thead>
+                                <tr>
+                                    <th></th>
+                                    <th>MATCH</th>
+                                    <th>OPPONENT</th>
+                                    <th>RESULT</th>
+                                    <th>RATING CHANGE</th>
+                                    <th>END TYPE</th>
+                                    <th>FINISHED</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var m in _matches)
+                                {
+                                    <tr>
+                                        <td class="match-history-replay-cell">
+                                            @if (CanReplay(m.Status))
+                                            {
+                                                <a href="@GetReplayHref(m.MatchId)" class="btn btn-sm btn-primary">REPLAY</a>
+                                            }
+                                        </td>
+                                        <td class="cell-id">#@m.MatchId</td>
+                                        <td>@m.OpponentUserName</td>
+                                        <td>
+                                            @if (m.PlayerWon is true)
+                                            {
+                                                <span class="badge badge-success">WIN</span>
+                                            }
+                                            else if (m.PlayerWon is false)
+                                            {
+                                                <span class="badge badge-danger">LOSS</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge badge-player">-</span>
+                                            }
+                                        </td>
+                                        <td class="@GetRatingCellClass(m.RatingChange)">@FormatSignedDelta(m.RatingChange)</td>
+                                        <td>
+                                            <span class="badge @(GetEndKindBadgeClass(m.EndKind) ?? "badge-player")">
+                                                @FormatEndKind(m.EndKind, ResolveDisplayName(profile.User))
+                                            </span>
+                                        </td>
+                                        <td class="cell-email muted">
+                                            @(m.FinishedAt?.UtcDateTime.ToString("yyyy-MM-dd HH:mm UTC") ?? "-")
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int UserId { get; set; }
+
+    const int MaxHistoryMatches = 20;
+
+    AdminUserProfileResponseDto? _profile;
+    bool _loading = true;
+    string? _errorMessage;
+    int? _loadedUserId;
+
+    bool _historyLoading = true;
+    string? _historyError;
+    List<MatchHistoryEntryResponseDto> _matches = new();
+
+    protected override void OnInitialized()
+    {
+        Auth.OnChange += OnAuthChanged;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender && _loadedUserId == UserId)
+            return;
+
+        await Auth.InitializeAsync();
+        if (!Auth.IsLoggedIn)
+        {
+            Nav.NavigateTo("/login");
+            return;
+        }
+
+        if (Auth.CurrentUser?.IsAdmin != true)
+            return;
+
+        if (_loadedUserId == UserId)
+            return;
+
+        _loadedUserId = UserId;
+        await LoadProfileAndHistoryAsync();
+    }
+
+    string GetReplayHref(int matchId) =>
+        $"/replay/{matchId}?admin=true&return={Uri.EscapeDataString($"/users/{UserId}")}";
+
+    async Task LoadProfileAndHistoryAsync()
+    {
+        _loading = true;
+        _historyLoading = true;
+        _errorMessage = null;
+        _historyError = null;
+        await InvokeAsync(StateHasChanged);
+
+        var profile = await Api.GetAdminUserProfileAsync(UserId);
+        if (profile is null)
+        {
+            _profile = null;
+            _matches = new();
+            _errorMessage = "Operator not found or profile could not be loaded.";
+            _loading = false;
+            _historyLoading = false;
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        _profile = profile;
+        _loading = false;
+        await LoadHistoryAsync();
+    }
+
+    async Task LoadHistoryAsync()
+    {
+        _historyLoading = true;
+        _historyError = null;
+        await InvokeAsync(StateHasChanged);
+
+        var dto = await Api.GetAdminUserMatchHistoryAsync(UserId, MaxHistoryMatches);
+        if (dto is null)
+        {
+            _matches = new();
+            _historyError = "Failed to load match history.";
+        }
+        else
+        {
+            _matches = dto.Matches.ToList();
+        }
+
+        _historyLoading = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    async Task ReloadHistoryAsync() => await LoadHistoryAsync();
+
+    static string ResolveDisplayName(UserResponseDto user) =>
+        string.IsNullOrWhiteSpace(user.UserName) ? $"user #{user.UserID}" : user.UserName;
+
+    static bool CanReplay(int status) =>
+        status == (int)MatchStatus.P1Won || status == (int)MatchStatus.P2Won;
+
+    static string FormatSignedDelta(int delta) =>
+        delta > 0 ? $"+{delta}" : delta.ToString();
+
+    static string GetRatingCellClass(int delta) =>
+        delta > 0 ? "match-history-rating--up" : delta < 0 ? "match-history-rating--down" : "";
+
+    static string FormatEndKind(MatchHistoryEndKind kind, string subjectName) => kind switch
+    {
+        MatchHistoryEndKind.NormalBattle => "All ships destroyed",
+        MatchHistoryEndKind.OpponentLeft => "Opponent left",
+        MatchHistoryEndKind.SelfLeft => $"{subjectName} left",
+        MatchHistoryEndKind.Abandoned => "Abandoned",
+        _ => "Unknown"
+    };
+
+    static string? GetEndKindBadgeClass(MatchHistoryEndKind kind) =>
+        kind == MatchHistoryEndKind.SelfLeft ? "badge-match-history-self-left" : null;
+
+    private async void OnAuthChanged()
+    {
+        await InvokeAsync(async () =>
+        {
+            if (Auth.IsInitialized && !Auth.IsLoggedIn)
+            {
+                Nav.NavigateTo("/login");
+                return;
+            }
+
+            if (Auth.IsInitialized && Auth.IsLoggedIn && Auth.CurrentUser?.IsAdmin == true && _loadedUserId != UserId)
+            {
+                _loadedUserId = UserId;
+                await LoadProfileAndHistoryAsync();
+            }
+            else
+            {
+                StateHasChanged();
+            }
+        });
+    }
+
+    public ValueTask DisposeAsync()
+    {
+        Auth.OnChange -= OnAuthChanged;
+        return ValueTask.CompletedTask;
+    }
+}

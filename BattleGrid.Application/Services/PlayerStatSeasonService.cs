@@ -24,7 +24,7 @@ public sealed class PlayerStatSeasonService : IPlayerStatSeasonService
 
     public async Task<PlayerStatSeasonState> EnsureMatchmakingRatingAsync( int userId, CancellationToken cancellationToken = default)
     {
-        var currentSeason = await GetGlobalCurrentSeasonNoAsync(cancellationToken);
+        var currentSeason = await GetGlobalCurrentSeasonNoInternalAsync(cancellationToken);
         var existing = await GetSeasonRowAsync(userId, currentSeason, cancellationToken);
 
         if (existing is not null)
@@ -77,7 +77,7 @@ public sealed class PlayerStatSeasonService : IPlayerStatSeasonService
             };
         }
 
-        var previousSeason = await GetGlobalCurrentSeasonNoAsync(cancellationToken);
+        var previousSeason = await GetGlobalCurrentSeasonNoInternalAsync(cancellationToken);
         var newSeason = previousSeason + 1;
         var existingNewSeason = await GetSeasonRowAsync(adminUserId, newSeason, cancellationToken);
 
@@ -121,7 +121,7 @@ public sealed class PlayerStatSeasonService : IPlayerStatSeasonService
         return new AdvanceSeasonResponseDto
         {
             Success = true,
-            Message = $"Season advanced from {previousSeason} to {newSeason}. Other players will receive a new season row when they enter matchmaking.",
+            Message = $"Season advanced from {previousSeason} to {newSeason}. Other players will receive a new season row when they log in.",
             PreviousSeasonNo = previousSeason,
             NewSeasonNo = newSeason,
             AdminStartingRating = startingRating
@@ -135,7 +135,27 @@ public sealed class PlayerStatSeasonService : IPlayerStatSeasonService
             .Where(p => p.UserID == userId && p.SeasonNo == state.GlobalCurrentSeason)
             .SingleAsync(cancellationToken);
 
-        return new PlayerSeasonStatsResponseDto
+        return MapToSeasonStatsDto(row);
+    }
+
+    public Task<int> GetGlobalCurrentSeasonNoAsync(CancellationToken cancellationToken = default) =>
+        GetGlobalCurrentSeasonNoInternalAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<PlayerSeasonStatsResponseDto>> GetAllSeasonStatsForUserAsync(
+        int userId,
+        CancellationToken cancellationToken = default)
+    {
+        var rows = await _context.PlayerStat.AsNoTracking()
+            .Where(p => p.UserID == userId)
+            .OrderByDescending(p => p.SeasonNo)
+            .ThenByDescending(p => p.StatID)
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(MapToSeasonStatsDto).ToList();
+    }
+
+    private static PlayerSeasonStatsResponseDto MapToSeasonStatsDto(PlayerStat row) =>
+        new()
         {
             SeasonNo = row.SeasonNo,
             MatchesPlayed = row.MatchesPlayed,
@@ -145,7 +165,6 @@ public sealed class PlayerStatSeasonService : IPlayerStatSeasonService
             HighestRating = row.HighestRating,
             LastUpdatedAt = row.LastUpdatedAt
         };
-    }
     private async Task<PlayerStatSeasonState> BuildStateFromRowAsync(PlayerStat row, int seasonNo, CancellationToken cancellationToken)
     {
         await RepairInflatedSeasonPeakIfNeededAsync(row.UserID, seasonNo, row, cancellationToken);
@@ -202,7 +221,10 @@ public sealed class PlayerStatSeasonService : IPlayerStatSeasonService
         await _context.SaveChangesAsync(cancellationToken);
     }
 
-    private async Task<int> GetGlobalCurrentSeasonNoAsync(CancellationToken cancellationToken)
+    private Task<int> GetGlobalCurrentSeasonNoInternalAsync(CancellationToken cancellationToken) =>
+        GetGlobalCurrentSeasonNoCoreAsync(cancellationToken);
+
+    private async Task<int> GetGlobalCurrentSeasonNoCoreAsync(CancellationToken cancellationToken)
     {
         if (!await _context.PlayerStat.AsNoTracking().AnyAsync(cancellationToken))
             return 1;

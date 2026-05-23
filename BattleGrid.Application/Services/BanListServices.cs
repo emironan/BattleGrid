@@ -1,4 +1,5 @@
 using BattleGrid.Application.Interfaces;
+using BattleGrid.Contracts.ResponseDtos;
 using BattleGrid.Domain.Entities;
 using BattleGrid.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -39,6 +40,40 @@ public sealed class BanListServices : IBanListServices
         await SyncStaleUserBanFlagsAsync(now, cancellationToken);
 
         return revertedCount;
+    }
+
+    public async Task<UserBanStatusResponseDto> GetBanStatusForPlayerAsync(
+        int playerId,
+        CancellationToken cancellationToken = default)
+    {
+        var now = DateTimeOffset.UtcNow.ToUniversalTime();
+
+        var user = await _context.User
+            .AsNoTracking()
+            .Where(u => u.UserID == playerId)
+            .Select(u => new { u.IsActive, u.IsBanned })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (user is null || !user.IsActive || !user.IsBanned)
+            return new UserBanStatusResponseDto();
+
+        var latest = await _context.BanList
+            .AsNoTracking()
+            .Where(b => b.PlayerID == playerId)
+            .OrderByDescending(b => b.BanID)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (latest is null || !IsBanActive(latest, now))
+        {
+            return new UserBanStatusResponseDto
+            {
+                IsBanned = true,
+                IsPermanent = true,
+                DisplayText = "Permanent"
+            };
+        }
+
+        return MapBanStatus(latest);
     }
 
     public async Task<bool> RefreshPlayerBanStateAsync(int playerId, CancellationToken cancellationToken = default)
@@ -179,5 +214,52 @@ public sealed class BanListServices : IBanListServices
             return ban.BannedAt.ToUniversalTime().Add(ban.Duration.Value);
 
         return null;
+    }
+
+    private static UserBanStatusResponseDto MapBanStatus(BanList ban)
+    {
+        if (!ban.IsTemporary)
+        {
+            return new UserBanStatusResponseDto
+            {
+                IsBanned = true,
+                IsPermanent = true,
+                DisplayText = "Permanent"
+            };
+        }
+
+        var endsAt = GetBanEndUtc(ban);
+        var display = endsAt.HasValue
+            ? $"Until {endsAt.Value.UtcDateTime:yyyy-MM-dd HH:mm} UTC"
+            : FormatDurationLabel(ban.Duration);
+
+        return new UserBanStatusResponseDto
+        {
+            IsBanned = true,
+            IsPermanent = false,
+            EndsAtUtc = endsAt,
+            DisplayText = display
+        };
+    }
+
+    private static string FormatDurationLabel(TimeSpan? duration)
+    {
+        if (duration is not { } d)
+            return "Temporary";
+
+        if (d.TotalDays >= 1)
+        {
+            var days = (int)Math.Ceiling(d.TotalDays);
+            return days == 1 ? "1 day" : $"{days} days";
+        }
+
+        if (d.TotalHours >= 1)
+        {
+            var hours = (int)Math.Ceiling(d.TotalHours);
+            return hours == 1 ? "1 hour" : $"{hours} hours";
+        }
+
+        var minutes = Math.Max(1, (int)Math.Ceiling(d.TotalMinutes));
+        return minutes == 1 ? "1 minute" : $"{minutes} minutes";
     }
 }

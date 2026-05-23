@@ -1,0 +1,8 @@
+@if (Status is { IsBanned: true, DisplayText: { Length: > 0 } text })
+{
+    <p class="muted operator-ban-detail">@text</p>
+}
+
+@code {
+    [Parameter] public UserBanStatusResponseDto? Status { get; set; }
+}

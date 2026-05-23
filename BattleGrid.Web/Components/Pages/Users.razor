@@ -68,12 +68,13 @@ else
                         <th>EMAIL</th>
                         <th>ROLE</th>
                         <th>STATUS</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
                     @foreach (var user in users)
                     {
-                        <tr class="@(user.IsBanned ? "row-danger" : "")">
+                        <tr class="@UserAccountStatusHelper.GetDataTableRowClass(user)">
                             <td class="cell-id">#@user.UserID</td>
                             <td>@user.UserName</td>
                             <td class="cell-email">@user.Email</td>
@@ -88,14 +89,10 @@ else
                                 }
                             </td>
                             <td>
-                                @if (user.IsBanned)
-                                {
-                                    <span class="badge badge-danger">BANNED</span>
-                                }
-                                else
-                                {
-                                    <span class="badge badge-success">ACTIVE</span>
-                                }
+                                <OperatorAccountStatus User="user" />
+                            </td>
+                            <td class="user-profile-link-cell">
+                                <a href="/users/@user.UserID" class="btn btn-sm btn-outline">PROFILE</a>
                             </td>
                         </tr>
                     }
@@ -114,13 +111,11 @@ else
     protected override void OnInitialized()
     {
         Auth.OnChange += OnAuthChanged;
-        if (Auth.IsInitialized && !Auth.IsLoggedIn)
-            Nav.NavigateTo("/login");
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        if (!firstRender || _pageDataLoaded)
+        if (!firstRender && _pageDataLoaded)
             return;
 
         await Auth.InitializeAsync();
@@ -131,6 +126,9 @@ else
         }
 
         if (Auth.CurrentUser?.IsAdmin != true)
+            return;
+
+        if (_pageDataLoaded)
             return;
 
         _pageDataLoaded = true;

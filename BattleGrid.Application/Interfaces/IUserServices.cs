@@ -1,4 +1,4 @@
-﻿using BattleGrid.Contracts.RequestDtos;
+using BattleGrid.Contracts.RequestDtos;
 using BattleGrid.Contracts.ResponseDtos;
 using BattleGrid.Domain.Entities;
 
@@ -10,8 +10,9 @@ namespace BattleGrid.Application.Interfaces
         Task<UserResponseDto?> GetByIdAsync(int userId);
         Task<UserResponseDto?> GetByLoginInfoAsync(string loginInfo);   // UserName or Email
         Task<string> HashPasswordAsync(int userId);
-        //aaa Task<GeneralResponseDto> UserUpdateByUserAsync(UserUpdateUserRequestDto dto);
-        //aaa Task<GeneralResponseDto> UserUpdateByAdminAsync(UserUpdateAdminRequestDto dto);
         Task<bool> IsAdminAsync(int userId);
+
+        /// <summary>Operator identity and season stats for admin personnel profile.</summary>
+        Task<AdminUserProfileResponseDto?> GetAdminUserProfileAsync(int targetUserId, CancellationToken cancellationToken = default);
     }
 }

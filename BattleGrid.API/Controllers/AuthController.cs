@@ -136,10 +136,10 @@ namespace BattleGrid.API.Controllers
                 var result = await _authServices.UpdatePasswordAsync(dto);
                 if (!result.Success)
                 {
-                    return BadRequest($"An error occured while updating password: {result.Message}");
+                    return BadRequest(result.Message);
                 }
 
-                return Ok(result.Message);
+                return Ok(new { result.Message });
             }
             catch (Exception ex)
             {

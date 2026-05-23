@@ -86,7 +86,7 @@ else
                                 }
                                 else
                                 {
-                                    <span class="badge badge-player">—</span>
+                                    <span class="badge badge-player">-</span>
                                 }
                             </td>
                             <td class="@GetRatingCellClass(m.RatingChange)">@FormatSignedDelta(m.RatingChange)</td>
@@ -94,7 +94,7 @@ else
                                 <span class="badge @(GetEndKindBadgeClass(m.EndKind) ?? "badge-player")">@FormatEndKind(m.EndKind)</span>
                             </td>
                             <td class="cell-email muted">
-                                @(m.FinishedAt?.UtcDateTime.ToString("yyyy-MM-dd HH:mm UTC") ?? "—")
+                                @(m.FinishedAt?.UtcDateTime.ToString("yyyy-MM-dd HH:mm UTC") ?? "-")
                             </td>
                         </tr>
                     }

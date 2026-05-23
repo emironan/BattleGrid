@@ -20,6 +20,12 @@ public interface IPlayerStatSeasonService
     /// </summary>
     Task<PlayerSeasonStatsResponseDto> GetCurrentSeasonStatsAsync(int userId, CancellationToken cancellationToken = default);
 
+    /// <summary>Active global season number (max <c>SeasonNo</c> across all player stats, or 1 if none).</summary>
+    Task<int> GetGlobalCurrentSeasonNoAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>All season stat rows for a user, newest season first.</summary>
+    Task<IReadOnlyList<PlayerSeasonStatsResponseDto>> GetAllSeasonStatsForUserAsync(int userId, CancellationToken cancellationToken = default);
+
     /// <summary>
     /// Ends the current global season and starts the next by creating a new <see cref="Domain.Entities.PlayerStat"/>
     /// row for the administrator (bumps global season via max <c>SeasonNo</c>). Other players receive a row when they queue.

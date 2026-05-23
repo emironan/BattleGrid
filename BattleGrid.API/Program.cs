@@ -188,4 +188,23 @@ app.MapHub<GameHub>("/game/{matchId:int}");
 // Standart response from API base URL. Will be used to detect API status in frontend
 app.MapGet("/", () => "BattleGrid API is running.");
 
+app.MapGet("/health", async (BattleGridDbContext db, CancellationToken cancellationToken) =>
+{
+    var dbOk = false;
+    try
+    {
+        dbOk = await db.Database.CanConnectAsync(cancellationToken);
+    }
+    catch
+    {
+        dbOk = false;
+    }
+
+    return Results.Json(new BattleGrid.Contracts.ResponseDtos.HealthResponseDto
+    {
+        Status = "ok",
+        Database = dbOk ? "connected" : "unreachable"
+    });
+});
+
 app.Run();

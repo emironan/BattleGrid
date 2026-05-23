@@ -64,14 +64,7 @@ else
                     <tr>
                         <td class="info-key">STATUS</td>
                         <td class="info-val">
-                            @if (Auth.CurrentUser.IsBanned)
-                            {
-                                <span class="badge badge-danger">BANNED</span>
-                            }
-                            else
-                            {
-                                <span class="badge badge-success">ACTIVE</span>
-                            }
+                            <OperatorAccountStatus User="Auth.CurrentUser" BanStatus="_banStatus" />
                         </td>
                     </tr>
                 </table>
@@ -101,11 +94,23 @@ else
                         </tr>
                         <tr>
                             <td class="info-key">RATING</td>
-                            <td class="info-val">@s.Rating <span class="muted">(season peak @s.HighestRating)</span></td>
+                            <td class="info-val">@s.Rating</td>
                         </tr>
                         <tr>
-                            <td class="info-key">MATCHES</td>
-                            <td class="info-val">@s.MatchesPlayed played · @s.MatchesWon won · @(s.MatchesPlayed - s.MatchesWon) lost</td>
+                            <td class="info-key">SEASON PEAK</td>
+                            <td class="info-val">@s.HighestRating</td>
+                        </tr>
+                        <tr>
+                            <td class="info-key">PLAYED</td>
+                            <td class="info-val">@s.MatchesPlayed</td>
+                        </tr>
+                        <tr>
+                            <td class="info-key">WON</td>
+                            <td class="info-val">@s.MatchesWon</td>
+                        </tr>
+                        <tr>
+                            <td class="info-key">LOST</td>
+                            <td class="info-val">@(s.MatchesPlayed - s.MatchesWon)</td>
                         </tr>
                         <tr>
                             <td class="info-key">WIN RATE</td>
@@ -149,12 +154,12 @@ else
                     </p>
                     <button type="button" class="btn btn-danger btn-full mt-sm" @onclick="LeaveQueueFromDashboardAsync">LEAVE QUEUE</button>
                 }
+                <a href="/settings" class="btn btn-outline btn-full mt-sm">ACCOUNT SETTINGS</a>
                 <a href="/match-history" class="btn btn-outline btn-full mt-sm">MATCH HISTORY</a>
                 @if (Auth.CurrentUser!.IsAdmin)
                 {
                     <a href="/users" class="btn btn-outline btn-full">VIEW ALL OPERATORS</a>
                 }
-                <a href="/shiptypes" class="btn btn-outline btn-full">VIEW FLEET REGISTRY</a>
                 @if (Auth.CurrentUser!.IsAdmin)
                 {
                     <a href="http://localhost:4744/swagger" target="_blank" class="btn btn-outline btn-full">OPEN API DOCS ↗</a>
@@ -173,6 +178,7 @@ else
     PlayerSeasonStatsResponseDto? _seasonStats;
     bool _seasonStatsLoaded;
     string? _seasonStatsError;
+    UserBanStatusResponseDto? _banStatus;
 
     protected override void OnInitialized()
     {
@@ -201,6 +207,9 @@ else
 
         _pageDataLoaded = true;
         await Resumable.RefreshAsync();
+
+        if (Auth.CurrentUser is { IsActive: true, IsBanned: true })
+            _banStatus = await Api.GetMyBanStatusAsync();
 
         var stats = await Api.GetMyCurrentSeasonStatsAsync();
         _seasonStatsLoaded = true;

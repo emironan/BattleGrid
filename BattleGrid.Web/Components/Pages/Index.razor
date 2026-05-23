@@ -42,7 +42,7 @@
                 <span class="card-label">API STATUS</span>
             </div>
             <div class="card-body">
-                @if (apiLoading)
+                @if (statusLoading)
                 {
                     <span class="muted">Pinging...</span>
                 }
@@ -51,12 +51,12 @@
                     <span class="status-badge @(apiOnline ? "online" : "offline")">
                         @(apiOnline ? "● ONLINE" : "● OFFLINE")
                     </span>
-                    <p class="muted mt-sm">@(apiOnline ? "API responding. Secure connection established." : "API unreachable. Secure connection lost!")</p>
+                    <p class="muted mt-sm">@GetApiStatusMessage()</p>
                 }
             </div>
         </div>
 
-        <div class="card">
+        <div class="card @(Auth.IsLoggedIn ? "card-success" : "card")">
             <div class="card-header">
                 <span class="card-icon">◉</span>
                 <span class="card-label">OPERATOR</span>
@@ -70,32 +70,42 @@
                 {
                     <span class="status-badge online">● AUTHENTICATED</span>
                     <p class="muted mt-sm">@(string.IsNullOrWhiteSpace(Auth.CurrentUser?.UserName) ? "-" : Auth.CurrentUser!.UserName)</p>
-                    <p class="muted mt-sm">@(apiOnline ? "All systems operational" : "Some systems are experiencing technical issues")</p>
+                    <p class="muted mt-sm">@GetOperatorLoggedInMessage()</p>
                 }
                 else
                 {
                     <span class="status-badge offline">● NOT LOGGED IN</span>
-                    <p class="muted mt-sm">@(apiOnline ? "Login to access full system" : "Some systems are experiencing technical issues. Please try again later")</p>
+                    <p class="muted mt-sm">@GetOperatorLoggedOutMessage()</p>
                 }
             </div>
         </div>
 
-        <div class="card">
+        <div class="card @GetDatabaseCardClass()">
             <div class="card-header">
                 <span class="card-icon">⬢</span>
                 <span class="card-label">DATABASE</span>
             </div>
             <div class="card-body">
-                <span class="status-badge online">● CONNECTED</span>
-                <p class="muted mt-sm">System data is safe and secure</p>
+                @if (statusLoading)
+                {
+                    <span class="muted">Pinging...</span>
+                }
+                else
+                {
+                    <span class="status-badge @GetDatabaseBadgeClass()">@GetDatabaseBadgeLabel()</span>
+                    <p class="muted mt-sm">@GetDatabaseStatusMessage()</p>
+                }
             </div>
         </div>
     </div>
 </div>
 
 @code {
-    bool apiLoading = true;
-    bool apiOnline = false;
+    const string TechnicalIssuesMessage = "Some systems are experiencing technical issues. Please try again later";
+
+    bool statusLoading = true;
+    bool apiOnline;
+    bool? dbOnline;
     bool _initialized;
 
     protected override void OnInitialized()
@@ -117,9 +127,61 @@
         await Auth.InitializeAsync();
         if (Auth.IsLoggedIn)
             await Resumable.RefreshAsync();
-        apiOnline = await Api.CheckApiHealthAsync();
-        apiLoading = false;
+
+        var health = await Api.CheckSystemHealthAsync();
+        apiOnline = health.ApiOnline;
+        dbOnline = health.DatabaseOnline;
+        statusLoading = false;
         StateHasChanged();
+    }
+
+    string GetApiStatusMessage() =>
+        apiOnline
+            ? "API responding. Secure connection established."
+            : TechnicalIssuesMessage;
+
+    string GetOperatorLoggedInMessage() =>
+        SystemsHealthy()
+            ? "All systems operational"
+            : TechnicalIssuesMessage;
+
+    string GetOperatorLoggedOutMessage() =>
+        SystemsHealthy()
+            ? "Login to access full system"
+            : TechnicalIssuesMessage;
+
+    bool SystemsHealthy() => apiOnline && dbOnline == true;
+
+    string GetDatabaseCardClass()
+    {
+        if (statusLoading || !apiOnline || dbOnline != true)
+            return "card-danger";
+        return "card-success";
+    }
+
+    string GetDatabaseBadgeClass()
+    {
+        if (!apiOnline || dbOnline != true)
+            return "offline";
+        return "online";
+    }
+
+    string GetDatabaseBadgeLabel()
+    {
+        if (!apiOnline)
+            return "● UNAVAILABLE";
+        if (dbOnline == true)
+            return "● CONNECTED";
+        return "● UNREACHABLE";
+    }
+
+    string GetDatabaseStatusMessage()
+    {
+        if (!apiOnline)
+            return TechnicalIssuesMessage;
+        if (dbOnline == true)
+            return "System data is safe and secure";
+        return "Database connection could not be established!";
     }
 
     public void Dispose()

@@ -1,4 +1,4 @@
-﻿using BattleGrid.Contracts.RequestDtos;
+using BattleGrid.Contracts.RequestDtos;
 using BattleGrid.Contracts.ResponseDtos;
 using BattleGrid.Web.Models;
 using Microsoft.JSInterop;
@@ -56,6 +56,27 @@ public class AuthStateService
             IsInitialized = true;
             NotifyStateChanged();
         }
+    }
+
+    public async Task UpdateCurrentUserAsync(UserResponseDto user)
+    {
+        CurrentUser = user;
+        if (AccessToken is null || RefreshToken is null)
+        {
+            NotifyStateChanged();
+            return;
+        }
+
+        await _js.InvokeVoidAsync("bgAuth.store", new AuthCookieSession
+        {
+            AccessToken = AccessToken,
+            RefreshToken = RefreshToken,
+            AccessTokenExpiry = AccessTokenExpiry,
+            RefreshTokenExpiry = RefreshTokenExpiry,
+            CurrentUser = CurrentUser
+        });
+        await TryPersistProfileToLocalAsync();
+        NotifyStateChanged();
     }
 
     public async Task SetAuthAsync(LoginResponseDto tokens, UserResponseDto user)

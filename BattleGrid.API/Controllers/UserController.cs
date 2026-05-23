@@ -61,6 +61,76 @@ public class UserController : ControllerBase
         }
     }
 
+    [HttpGet("me")]
+    public async Task<ActionResult<UserResponseDto>> GetMe()
+    {
+        if (!User.TryGetAuthenticatedUserId(out var uid))
+            return Unauthorized();
+
+        var user = await _userServices.GetByIdAsync(uid);
+        if (user is null || !user.IsActive)
+            return NotFound();
+
+        return Ok(user);
+    }
+
+    [HttpPatch("email")]
+    public async Task<ActionResult> ChangeEmail(
+        [FromBody] ChangeEmailRequestDto dto,
+        [FromServices] IAuthServices auth)
+    {
+        if (!User.TryGetAuthenticatedUserId(out var uid))
+            return Unauthorized();
+
+        var (result, updatedUser) = await auth.ChangeEmailAsync(uid, dto);
+        if (!result.Success)
+            return BadRequest(result.Message);
+
+        return Ok(new { result.Message, user = updatedUser });
+    }
+
+    [HttpPatch("username")]
+    public async Task<ActionResult> ChangeUsername(
+        [FromBody] ChangeUsernameRequestDto dto,
+        [FromServices] IAuthServices auth)
+    {
+        if (!User.TryGetAuthenticatedUserId(out var uid))
+            return Unauthorized();
+
+        var (result, updatedUser) = await auth.ChangeUsernameAsync(uid, dto);
+        if (!result.Success)
+            return BadRequest(result.Message);
+
+        return Ok(new { result.Message, user = updatedUser });
+    }
+
+    [HttpPatch("deactivate")]
+    public async Task<ActionResult> DeactivateAccount(
+        [FromBody] DeactivateAccountRequestDto dto,
+        [FromServices] IAuthServices auth)
+    {
+        if (!User.TryGetAuthenticatedUserId(out var uid))
+            return Unauthorized();
+
+        var result = await auth.DeactivateAccountAsync(uid, dto);
+        if (!result.Success)
+            return BadRequest(result.Message);
+
+        return Ok(new { result.Message });
+    }
+
+    /// <summary>Active ban duration for the authenticated user (dashboard status).</summary>
+    [HttpGet("ban-status")]
+    public async Task<ActionResult<UserBanStatusResponseDto>> GetMyBanStatus(
+        [FromServices] IBanListServices banList)
+    {
+        if (!User.TryGetAuthenticatedUserId(out var uid))
+            return Unauthorized();
+
+        var status = await banList.GetBanStatusForPlayerAsync(uid);
+        return Ok(status);
+    }
+
     /// <summary> Competitive stats for the authenticated user for the active global season. </summary>
     [HttpGet("stats/current-season")]
     public async Task<ActionResult<PlayerSeasonStatsResponseDto>> GetMyCurrentSeasonStats(

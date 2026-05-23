@@ -147,6 +147,9 @@ else if (_replay is { } replay)
     [SupplyParameterFromQuery(Name = "admin")]
     public bool AdminReplay { get; set; }
 
+    [SupplyParameterFromQuery(Name = "return")]
+    public string? ReturnPath { get; set; }
+
     const int AutoStepDelayMs = 900;
 
     MatchReplayResponseDto? _replay;
@@ -317,8 +320,30 @@ else if (_replay is { } replay)
         return dto.Player1Id;
     }
 
-    string BackHref => _isAdminView ? "/admin" : "/match-history";
-    string BackLabel => _isAdminView ? "Back to admin panel" : "Back to history";
+    string BackHref
+    {
+        get
+        {
+            if (IsSafeLocalReturnPath(ReturnPath))
+                return ReturnPath!;
+            return _isAdminView ? "/admin" : "/match-history";
+        }
+    }
+
+    string BackLabel
+    {
+        get
+        {
+            if (IsSafeLocalReturnPath(ReturnPath) && ReturnPath!.StartsWith("/users/", StringComparison.Ordinal))
+                return "Back to operator profile";
+            return _isAdminView ? "Back to admin panel" : "Back to history";
+        }
+    }
+
+    static bool IsSafeLocalReturnPath(string? path) =>
+        !string.IsNullOrWhiteSpace(path)
+        && path.StartsWith('/')
+        && !path.StartsWith("//", StringComparison.Ordinal);
 
     string GetMatchSubtitle() =>
         _replay is null

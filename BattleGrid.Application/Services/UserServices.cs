@@ -1,4 +1,4 @@
-﻿using BattleGrid.Application.Interfaces;
+using BattleGrid.Application.Interfaces;
 using BattleGrid.Contracts.RequestDtos;
 using BattleGrid.Contracts.ResponseDtos;
 using BattleGrid.Domain.Entities;
@@ -9,14 +9,24 @@ namespace BattleGrid.Application.Services
 {
     public class UserServices : IUserServices
     {
+        /// <summary>Global current season plus this many prior seasons (3 rows total).</summary>
+        const int MaxSeasonsInAdminProfile = 3;
+
         private readonly BattleGridDbContext _context;
         private readonly INormalizationHelper _normalizationHelper;
+        private readonly IPlayerStatSeasonService _playerStatSeason;
+        private readonly IBanListServices _banListServices;
 
-        public UserServices(BattleGridDbContext context,
-                            INormalizationHelper normalizationHelper)
+        public UserServices(
+            BattleGridDbContext context,
+            INormalizationHelper normalizationHelper,
+            IPlayerStatSeasonService playerStatSeason,
+            IBanListServices banListServices)
         {
             _context = context;
             _normalizationHelper = normalizationHelper;
+            _playerStatSeason = playerStatSeason;
+            _banListServices = banListServices;
         }
 
         public async Task<List<UserResponseDto>> GetAllUsersAsync()
@@ -86,13 +96,38 @@ namespace BattleGrid.Application.Services
             return userNew.PasswordHash;
         }
 
-        //aaa TODO: UserUpdateByUserAsync
-        //aaa TODO: UserUpdateByAdminAsync
-
         public async Task<bool> IsAdminAsync(int userId)
         {
             var user = await GetByIdAsync(userId);
             return user?.IsAdmin ?? false;
+        }
+
+        public async Task<AdminUserProfileResponseDto?> GetAdminUserProfileAsync(
+            int targetUserId,
+            CancellationToken cancellationToken = default)
+        {
+            var user = await GetByIdAsync(targetUserId);
+            if (user is null)
+                return null;
+
+            var globalCurrentSeasonNo = await _playerStatSeason.GetGlobalCurrentSeasonNoAsync(cancellationToken);
+            var allSeasonStats = await _playerStatSeason.GetAllSeasonStatsForUserAsync(targetUserId, cancellationToken);
+            var minSeasonNo = globalCurrentSeasonNo - (MaxSeasonsInAdminProfile - 1);
+            var seasonStats = allSeasonStats
+                .Where(s => s.SeasonNo >= minSeasonNo)
+                .OrderByDescending(s => s.SeasonNo)
+                .Take(MaxSeasonsInAdminProfile)
+                .ToList();
+
+            var banStatus = await _banListServices.GetBanStatusForPlayerAsync(targetUserId, cancellationToken);
+
+            return new AdminUserProfileResponseDto
+            {
+                User = user,
+                GlobalCurrentSeasonNo = globalCurrentSeasonNo,
+                SeasonStats = seasonStats,
+                BanStatus = banStatus
+            };
         }
 
         private static UserResponseDto MapToResponseDto(User user)

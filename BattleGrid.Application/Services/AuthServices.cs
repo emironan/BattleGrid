@@ -12,6 +12,8 @@ namespace BattleGrid.Application.Services
 {
     public class AuthServices : IAuthServices
     {
+        private static readonly TimeSpan ProfileFieldChangeCooldown = TimeSpan.FromDays(30);
+
         private readonly BattleGridDbContext _context;
         private readonly IUserServices _userServices;
         private readonly IJwtHelper _jwtHelper;
@@ -143,7 +145,15 @@ namespace BattleGrid.Application.Services
 
             if (user == null)
             {
-                throw new InvalidOperationException("User does not exist");
+                return new LoginResponseDto
+                {
+                    Success = false,
+                    Message = "User does not exist",
+                    AccessToken = string.Empty,
+                    RefreshToken = string.Empty,
+                    ATExpiresAt = DateTimeOffset.MinValue,
+                    RTExpiresAt = DateTimeOffset.MinValue
+                };
             }
 
             // Deleted account (or maybe permanently banned account)
@@ -164,8 +174,17 @@ namespace BattleGrid.Application.Services
             {
                 await _banListServices.RefreshPlayerBanStateAsync(user.UserID);
                 user = await _userServices.GetByLoginInfoAsync(dto.LoginInfo);
+
                 if (user is null)
-                    throw new InvalidOperationException("User does not exist");
+                    return new LoginResponseDto
+                    {
+                        Success = false,
+                        Message = "User does not exist",
+                        AccessToken = string.Empty,
+                        RefreshToken = string.Empty,
+                        ATExpiresAt = DateTimeOffset.MinValue,
+                        RTExpiresAt = DateTimeOffset.MinValue
+                    };
 
                 if (user.IsBanned)
                 {
@@ -479,7 +498,7 @@ namespace BattleGrid.Application.Services
                 return new GeneralResponseDto
                 {
                     Success = false,
-                    Message = "Invalid password!"
+                    Message = "Invalid username or password!"
                 };
             }
 
@@ -492,14 +511,10 @@ namespace BattleGrid.Application.Services
 
         public async Task<GeneralResponseDto> UpdatePasswordAsync(PasswordUpdateRequestDto dto)
         {
-            dto.Email = await _normalizationHelper.NormalizeLoginInfoAsync(dto.Email);
-
             var user = await _context.User
-                .Where(u => u.UserID == dto.UserID
-                         && u.Email == dto.Email)
-                .FirstOrDefaultAsync();
+                .FirstOrDefaultAsync(u => u.UserID == dto.UserID);
 
-            if (user == null)
+            if (user is null)
             {
                 return new GeneralResponseDto
                 {
@@ -508,10 +523,28 @@ namespace BattleGrid.Application.Services
                 };
             }
 
+            if (!user.IsActive)
+            {
+                return new GeneralResponseDto
+                {
+                    Success = false,
+                    Message = "This account is deactivated."
+                };
+            }
+
+            if (string.IsNullOrWhiteSpace(dto.NewPassword))
+            {
+                return new GeneralResponseDto
+                {
+                    Success = false,
+                    Message = "New password is required."
+                };
+            }
+
             var verificationDto = new LoginRequestDto
             {
                 UserID = dto.UserID,
-                LoginInfo = dto.Email,
+                LoginInfo = user.Email,
                 Password = dto.OldPassword
             };
 
@@ -540,6 +573,7 @@ namespace BattleGrid.Application.Services
             var newPasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NewPassword);
             user.PasswordHash = newPasswordHash;
             user.LastUpdatedAt = DateTimeOffset.UtcNow.ToUniversalTime();
+            user.UpdateReason = "Password changed by user (settings)";
 
             await _context.SaveChangesAsync();
 
@@ -560,6 +594,185 @@ namespace BattleGrid.Application.Services
                 Message = "Password updated successfuly."
             };
         }
+
+        public async Task<(GeneralResponseDto Result, UserResponseDto? UpdatedUser)> ChangeEmailAsync(
+            int userId,
+            ChangeEmailRequestDto dto,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(dto.NewEmail))
+                return (Fail("New email is required."), null);
+
+            var newEmail = await _normalizationHelper.NormalizeLoginInfoAsync(dto.NewEmail);
+
+            var user = await _context.User.FirstOrDefaultAsync(u => u.UserID == userId, cancellationToken);
+            if (user is null)
+                return (Fail("User not found."), null);
+
+            if (!user.IsActive)
+                return (Fail("This account is deactivated."), null);
+
+            if (string.Equals(user.Email, newEmail, StringComparison.Ordinal))
+                return (Fail("That is already your email address."), null);
+
+            var passwordCheck = await VerifyPasswordForUserAsync(user, dto.Password);
+            if (!passwordCheck.Success)
+                return (passwordCheck, null);
+
+            var now = DateTimeOffset.UtcNow.ToUniversalTime();
+            if (IsWithinMonthlyCooldown(user.LastEmailChangeAt, now))
+            {
+                return (Fail(
+                    $"Email can only be changed once per month. {FormatNextChangeAvailable(user.LastEmailChangeAt!.Value)}"),
+                    null);
+            }
+
+            var emailTaken = await _context.User
+                .AsNoTracking()
+                .AnyAsync(u => u.Email == newEmail && u.UserID != userId, cancellationToken);
+
+            if (emailTaken)
+                return (Fail("This email is already registered."), null);
+
+            user.Email = newEmail;
+            user.LastUpdatedAt = now;
+            user.LastEmailChangeAt = now;
+            user.UpdateReason = "Email changed by user (settings)";
+
+            await _context.SaveChangesAsync(cancellationToken);
+
+            return (Ok("Email updated successfully."), MapUserToResponse(user));
+        }
+
+        public async Task<(GeneralResponseDto Result, UserResponseDto? UpdatedUser)> ChangeUsernameAsync(
+            int userId,
+            ChangeUsernameRequestDto dto,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(dto.NewUserName))
+                return (Fail("User name is required."), null);
+
+            var newUserName = await _normalizationHelper.NormalizeLoginInfoAsync(dto.NewUserName);
+
+            if (newUserName.Contains('@', StringComparison.Ordinal))
+                return (Fail("User name cannot contain '@' (use the email field for email)."), null);
+
+            if (!Regex.IsMatch(newUserName, @"^[A-Za-z0-9_]+$", RegexOptions.CultureInvariant))
+                return (Fail("User name may only contain letters, numbers, and underscores."), null);
+
+            var user = await _context.User.FirstOrDefaultAsync(u => u.UserID == userId, cancellationToken);
+            if (user is null)
+                return (Fail("User not found."), null);
+
+            if (!user.IsActive)
+                return (Fail("This account is deactivated."), null);
+
+            if (string.Equals(user.UserName, newUserName, StringComparison.Ordinal))
+                return (Fail("That is already your user name."), null);
+
+            var passwordCheck = await VerifyPasswordForUserAsync(user, dto.Password);
+            if (!passwordCheck.Success)
+                return (passwordCheck, null);
+
+            var now = DateTimeOffset.UtcNow.ToUniversalTime();
+            if (IsWithinMonthlyCooldown(user.LastUserNameChangeAt, now))
+            {
+                return (Fail(
+                    $"User name can only be changed once per month. {FormatNextChangeAvailable(user.LastUserNameChangeAt!.Value)}"),
+                    null);
+            }
+
+            var nameTaken = await _context.User
+                .AsNoTracking()
+                .AnyAsync(u => u.UserName == newUserName && u.UserID != userId, cancellationToken);
+
+            if (nameTaken)
+                return (Fail("This user name is taken."), null);
+
+            user.UserName = newUserName;
+            user.LastUpdatedAt = now;
+            user.LastUserNameChangeAt = now;
+            user.UpdateReason = "User name changed by user (settings)";
+
+            await _context.SaveChangesAsync(cancellationToken);
+
+            return (Ok("User name updated successfully."), MapUserToResponse(user));
+        }
+
+        public async Task<GeneralResponseDto> DeactivateAccountAsync(
+            int userId,
+            DeactivateAccountRequestDto dto,
+            CancellationToken cancellationToken = default)
+        {
+            if (string.IsNullOrWhiteSpace(dto.Password))
+                return Fail("Password is required.");
+
+            var user = await _context.User.FirstOrDefaultAsync(u => u.UserID == userId, cancellationToken);
+            if (user is null)
+                return Fail("User not found.");
+
+            if (!user.IsActive)
+                return Fail("This account is already deactivated.");
+
+            var passwordCheck = await VerifyPasswordForUserAsync(user, dto.Password);
+            if (!passwordCheck.Success)
+                return passwordCheck;
+
+            var now = DateTimeOffset.UtcNow.ToUniversalTime();
+            user.IsActive = false;
+            user.LastUpdatedAt = now;
+            user.UpdateReason = "Account deactivated by user (settings)";
+
+            var sessions = await _context.Session
+                .Where(s => s.UserID == userId && !s.IsRevoked)
+                .ToListAsync(cancellationToken);
+
+            foreach (var session in sessions)
+            {
+                session.IsRevoked = true;
+                session.LastUpdatedAt = now;
+            }
+
+            await _context.SaveChangesAsync(cancellationToken);
+
+            return Ok("Account deleted successfully.");
+        }
+
+        private async Task<GeneralResponseDto> VerifyPasswordForUserAsync(User user, string password)
+        {
+            return await VerifyPasswordAsync(new LoginRequestDto
+            {
+                UserID = user.UserID,
+                LoginInfo = user.Email,
+                Password = password
+            });
+        }
+
+        private static bool IsWithinMonthlyCooldown(DateTimeOffset? lastChangeUtc, DateTimeOffset nowUtc) =>
+            lastChangeUtc is not null && lastChangeUtc.Value + ProfileFieldChangeCooldown > nowUtc;
+
+        private static string FormatNextChangeAvailable(DateTimeOffset lastChangeUtc)
+        {
+            var next = lastChangeUtc.ToUniversalTime().Add(ProfileFieldChangeCooldown);
+            return $"Next change available after {next:yyyy-MM-dd HH:mm} UTC.";
+        }
+
+        private static GeneralResponseDto Ok(string message) =>
+            new() { Success = true, Message = message };
+
+        private static GeneralResponseDto Fail(string message) =>
+            new() { Success = false, Message = message };
+
+        private static UserResponseDto MapUserToResponse(User user) =>
+            new()
+            {
+                UserID = user.UserID,
+                UserName = user.UserName,
+                Email = user.Email,
+                IsAdmin = user.IsAdmin,
+                IsBanned = user.IsBanned,
+                IsActive = user.IsActive
+            };
 
         private static string FormatBanMessageDetail(BanList? ban)
         {

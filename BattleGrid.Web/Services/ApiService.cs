@@ -122,6 +122,96 @@ public class ApiService
         }
     }
 
+    public async Task<(bool Success, string Message, UserResponseDto? User)> ChangeEmailAsync(ChangeEmailRequestDto request) =>
+        await PatchAccountSettingAsync("/api/User/email", request);
+
+    public async Task<(bool Success, string Message, UserResponseDto? User)> ChangeUsernameAsync(ChangeUsernameRequestDto request) =>
+        await PatchAccountSettingAsync("/api/User/username", request);
+
+    public async Task<(bool Success, string Message)> DeactivateAccountAsync(DeactivateAccountRequestDto request)
+    {
+        ApplyAuth();
+        try
+        {
+            var resp = await _http.PatchAsJsonAsync("/api/User/deactivate", request);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var err = await ReadErrorBodyAsync(resp);
+                return (false, err);
+            }
+
+            var body = await resp.Content.ReadFromJsonAsync<AccountSettingsUpdateResponseDto>();
+            return (true, body?.Message ?? "Account deleted successfully.");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Connection error: {ex.Message}");
+        }
+    }
+
+    public async Task<(bool Success, string Message)> ChangePasswordAsync(PasswordUpdateRequestDto request)
+    {
+        ApplyAuth();
+        try
+        {
+            var resp = await _http.PatchAsJsonAsync("/api/Auth/password", request);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var err = await ReadErrorBodyAsync(resp);
+                return (false, err);
+            }
+
+            var body = await resp.Content.ReadFromJsonAsync<AccountSettingsUpdateResponseDto>();
+            return (true, body?.Message ?? "Password updated successfully.");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Connection error: {ex.Message}");
+        }
+    }
+
+    async Task<(bool Success, string Message, UserResponseDto? User)> PatchAccountSettingAsync(
+        string url,
+        object request)
+    {
+        ApplyAuth();
+        try
+        {
+            var resp = await _http.PatchAsJsonAsync(url, request);
+            if (!resp.IsSuccessStatusCode)
+            {
+                var err = await ReadErrorBodyAsync(resp);
+                return (false, err, null);
+            }
+
+            var body = await resp.Content.ReadFromJsonAsync<AccountSettingsUpdateResponseDto>();
+            return (true, body?.Message ?? "Updated successfully.", body?.User);
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Connection error: {ex.Message}", null);
+        }
+    }
+
+    static async Task<string> ReadErrorBodyAsync(HttpResponseMessage resp)
+    {
+        var body = await resp.Content.ReadAsStringAsync();
+        return string.IsNullOrWhiteSpace(body) ? "Request failed." : body.Trim('"');
+    }
+
+    public async Task<UserBanStatusResponseDto?> GetMyBanStatusAsync()
+    {
+        ApplyAuth();
+        try
+        {
+            return await _http.GetFromJsonAsync<UserBanStatusResponseDto>("/api/User/ban-status");
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task<PlayerSeasonStatsResponseDto?> GetMyCurrentSeasonStatsAsync()
     {
         ApplyAuth();
@@ -137,14 +227,31 @@ public class ApiService
 
     public async Task<bool> CheckApiHealthAsync()
     {
+        var health = await CheckSystemHealthAsync();
+        return health.ApiOnline;
+    }
+
+    /// <summary>
+    /// <see cref="SystemHealthStatus.DatabaseOnline"/> is <c>null</c> when the API could not be reached.
+    /// </summary>
+    public async Task<SystemHealthStatus> CheckSystemHealthAsync()
+    {
         try
         {
-            var resp = await _http.GetAsync("/");
-            return resp.IsSuccessStatusCode;
+            var resp = await _http.GetAsync("/health");
+            if (!resp.IsSuccessStatusCode)
+                return new SystemHealthStatus(ApiOnline: false, DatabaseOnline: null);
+
+            var dto = await resp.Content.ReadFromJsonAsync<HealthResponseDto>();
+            if (dto is null)
+                return new SystemHealthStatus(ApiOnline: true, DatabaseOnline: false);
+
+            var dbOk = string.Equals(dto.Database, "connected", StringComparison.OrdinalIgnoreCase);
+            return new SystemHealthStatus(ApiOnline: true, DatabaseOnline: dbOk);
         }
         catch
         {
-            return false;
+            return new SystemHealthStatus(ApiOnline: false, DatabaseOnline: null);
         }
     }
 
@@ -273,6 +380,34 @@ public class ApiService
         {
             var resp = await _http.PostAsJsonAsync("/api/Admin/players/unban", request);
             return await resp.Content.ReadFromJsonAsync<GeneralResponseDto>();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<AdminUserProfileResponseDto?> GetAdminUserProfileAsync(int userId)
+    {
+        ApplyAuth();
+        try
+        {
+            return await _http.GetFromJsonAsync<AdminUserProfileResponseDto>($"/api/Admin/players/{userId}/profile");
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<MatchHistoryResponseDto?> GetAdminUserMatchHistoryAsync(int userId, int limit = 20)
+    {
+        ApplyAuth();
+        try
+        {
+            var capped = Math.Clamp(limit, 1, 20);
+            return await _http.GetFromJsonAsync<MatchHistoryResponseDto>(
+                $"/api/Admin/players/{userId}/match-history?limit={capped}");
         }
         catch
         {

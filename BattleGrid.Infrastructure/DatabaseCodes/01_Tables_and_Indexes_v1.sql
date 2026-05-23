@@ -18,6 +18,8 @@ CREATE TABLE "User" (
     "IsActive" BOOLEAN NOT NULL DEFAULT TRUE,
     "CreatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     "LastUpdatedAt" TIMESTAMPTZ,
+    "LastUserNameChangeAt" TIMESTAMPTZ,
+    "LastEmailChangeAt" TIMESTAMPTZ,
     "UpdateReason" VARCHAR(255)
 );
 
