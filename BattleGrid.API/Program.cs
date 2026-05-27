@@ -208,3 +208,6 @@ app.MapGet("/health", async (BattleGridDbContext db, CancellationToken cancellat
 });
 
 app.Run();
+
+// Used for tests, do NOT delete!
+public partial class Program { }
