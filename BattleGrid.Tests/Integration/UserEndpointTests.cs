@@ -160,12 +160,15 @@ public sealed class UserEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
                 _factory, session.Tokens!.AccessToken);
 
-            using var response = await authClient.GetAsync("/api/User/all");
+            using var response = await authClient.GetAsync("/api/User/all?page=1&pageSize=20");
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-            var users = await response.Content.ReadFromJsonAsync<List<UserResponseDto>>();
-            Assert.NotNull(users);
-            Assert.NotEmpty(users);
+            var page = await response.Content.ReadFromJsonAsync<PagedUsersResponseDto>();
+            Assert.NotNull(page);
+            Assert.NotEmpty(page.Items);
+            Assert.Equal(1, page.Page);
+            Assert.Equal(20, page.PageSize);
+            Assert.True(page.TotalCount >= page.Items.Count);
         }
         finally
         {

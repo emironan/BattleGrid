@@ -12,8 +12,8 @@
     --teal: #00d4a0;
     --red: #f04040;
     --yellow: #f0c040;
-    --text: #c0daf0;
-    --muted: #4d7099;
+    --text: #d7e9fb;
+    --muted: #8fb2d8;
     --border: #1a3558;
     --border-glow: rgba(0, 207, 255, 0.2);
     --success: #00c890;
@@ -65,7 +65,8 @@ a {
 html, body {
     height: 100%;
     font-family: var(--font);
-    font-size: 14px;
+    font-size: 16px;
+    line-height: 1.5;
     color: var(--text);
     background: var(--bg);
 }
@@ -98,7 +99,7 @@ body {
     border-top: 1px solid var(--border);
     padding: 12px 24px;
     text-align: center;
-    font-size: 11px;
+    font-size: 12px;
     letter-spacing: 0.1em;
 }
 
@@ -150,7 +151,7 @@ body {
 .nav-link {
     padding: 6px 12px;
     color: var(--muted);
-    font-size: 12px;
+    font-size: 13px;
     letter-spacing: 0.08em;
     text-decoration: none;
     border-radius: var(--radius);
@@ -186,7 +187,7 @@ body {
     background: rgba(0, 207, 255, 0.06);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    font-size: 12px;
+    font-size: 13px;
     color: var(--teal);
     letter-spacing: 0.06em;
 }
@@ -263,7 +264,7 @@ body {
     border-radius: calc(var(--radius) - 2px);
     background: transparent;
     color: var(--muted);
-    font-size: 12px;
+    font-size: 13px;
     letter-spacing: 0.08em;
     text-decoration: none;
     text-align: left;
@@ -336,7 +337,7 @@ body {
 }
 
 .nav-dropdown-subitem {
-    font-size: 11px;
+    font-size: 12px;
     padding: 6px 12px;
 }
 
@@ -978,6 +979,22 @@ body {
     justify-content: space-between;
     align-items: center;
     margin-bottom: 12px;
+}
+
+.table-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 16px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+}
+
+.table-pagination-meta {
+    font-size: 13px;
+    letter-spacing: 0.06em;
+    min-width: 8rem;
+    text-align: center;
 }
 
 .table-wrapper {
