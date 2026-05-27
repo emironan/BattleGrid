@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using Xunit.Abstractions;
 using System.Net;
 using System.Net.Http.Json;
 using BattleGrid.Contracts.RequestDtos;
@@ -7,6 +6,7 @@ using BattleGrid.Contracts.ResponseDtos;
 using BattleGrid.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Xunit.Abstractions;
 
 namespace BattleGrid.Tests.Integration;
 
@@ -17,10 +17,6 @@ namespace BattleGrid.Tests.Integration;
 /// </summary>
 public sealed class AuthResponseTimeTests : IClassFixture<BattleGridApiFactory>, IAsyncLifetime
 {
-    private const string RegisterPath = "/api/Auth/register";
-    private const string LoginPath = "/api/Auth/login";
-    private const string ExpectedRegisterSuccessMessage = "User registered succesfully.";
-
     private readonly BattleGridApiFactory _factory;
     private readonly ITestOutputHelper _output;
     private HttpClient _client = null!;
@@ -50,27 +46,26 @@ public sealed class AuthResponseTimeTests : IClassFixture<BattleGridApiFactory>,
         if (!_databaseAvailable)
             return;
 
-        var suffix = Guid.NewGuid().ToString("N")[..12];
-        var request = new RegisterRequestDto
-        {
-            UserName = $"perf_{suffix}",
-            Email = $"perf_{suffix}@battlegrid.test",
-            Password = "PerfTest_Pass123!"
-        };
+        /* UserName prefix "perf" is used to identify test users in the database.
+         * Test users are deleted after each test. 
+         * This will help identify the root cause if a test fails to delete
+         * Default is "api". So, other tests do not have to specify a prefix
+         */
+        var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest("perf");
 
         // Same moment as Register.razor: loading = true; await Api.RegisterAsync(model);
         var stopwatch = Stopwatch.StartNew();
-        using var response = await _client.PostAsJsonAsync(RegisterPath, request);
+        using var response = await ApiIntegrationTestHelper.RegisterAsync(_client, request);
         stopwatch.Stop();
 
         var body = await response.Content.ReadAsStringAsync();
-        var message = ParseRegisterResponseBody(body);
+        var message = ApiIntegrationTestHelper.ParseRegisterResponseBody(body);
 
         _output.WriteLine($"Register response time: {stopwatch.ElapsedMilliseconds} ms");
         _output.WriteLine($"HTTP {(int)response.StatusCode} — {message}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        Assert.Equal(ExpectedRegisterSuccessMessage, message);
+        Assert.Equal(ApiIntegrationTestHelper.ExpectedRegisterSuccessMessage, message);
 
         await using var scope = _factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BattleGridDbContext>();
@@ -79,7 +74,7 @@ public sealed class AuthResponseTimeTests : IClassFixture<BattleGridApiFactory>,
 
         Assert.True(persisted, "User should exist in the database after a successful register response.");
 
-        await CleanupTestUserAsync(db, request.Email);
+        await ApiIntegrationTestHelper.CleanupTestUserAsync(db, request.Email);
     }
 
     [Fact]
@@ -88,27 +83,16 @@ public sealed class AuthResponseTimeTests : IClassFixture<BattleGridApiFactory>,
         if (!_databaseAvailable)
             return;
 
-        var suffix = Guid.NewGuid().ToString("N")[..12];
-        const string password = "PerfTest_Pass123!";
-        var registerRequest = new RegisterRequestDto
-        {
-            UserName = $"perf_{suffix}",
-            Email = $"perf_{suffix}@battlegrid.test",
-            Password = password
-        };
+        var registerRequest = ApiIntegrationTestHelper.CreateUniqueRegisterRequest("perf");
 
-        using var registerResponse = await _client.PostAsJsonAsync(RegisterPath, registerRequest);
+        using var registerResponse = await ApiIntegrationTestHelper.RegisterAsync(_client, registerRequest);
         Assert.Equal(HttpStatusCode.OK, registerResponse.StatusCode);
-
-        var loginRequest = new LoginRequestDto
-        {
-            LoginInfo = registerRequest.Email,
-            Password = password
-        };
+        await registerResponse.Content.ReadAsStringAsync();
 
         // Same moment as Login.razor: loading = true; await Api.LoginAsync(model);
         var stopwatch = Stopwatch.StartNew();
-        using var response = await _client.PostAsJsonAsync(LoginPath, loginRequest);
+        using var response = await ApiIntegrationTestHelper.LoginPostAsync(
+            _client, registerRequest.Email, registerRequest.Password);
         stopwatch.Stop();
 
         var loginResult = await response.Content.ReadFromJsonAsync<LoginResponseDto>();
@@ -129,7 +113,7 @@ public sealed class AuthResponseTimeTests : IClassFixture<BattleGridApiFactory>,
 
         Assert.True(sessionExists, "Login should persist a session before returning tokens.");
 
-        await CleanupTestUserAsync(db, registerRequest.Email);
+        await ApiIntegrationTestHelper.CleanupTestUserAsync(db, registerRequest.Email);
     }
 
     [Fact]
@@ -141,29 +125,20 @@ public sealed class AuthResponseTimeTests : IClassFixture<BattleGridApiFactory>,
         const int iterations = 5;
         var timings = new List<long>(iterations);
 
-        for (int i = 0; i < iterations; i++)
+        for (var i = 0; i < iterations; i++)
         {
-            var suffix = Guid.NewGuid().ToString("N")[..12];
-
-            var request = new RegisterRequestDto
-            {
-                UserName = $"perf_{suffix}",
-                Email = $"perf_{suffix}@battlegrid.test",
-                Password = "PerfTest_Pass123!"
-            };
+            var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest("perf");
 
             var stopwatch = Stopwatch.StartNew();
-            using var response = await _client.PostAsJsonAsync(RegisterPath, request);
+            using var response = await ApiIntegrationTestHelper.RegisterAsync(_client, request);
             stopwatch.Stop();
-            
-            var body = await response.Content.ReadAsStringAsync();
+
+            await response.Content.ReadAsStringAsync();
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
             timings.Add(stopwatch.ElapsedMilliseconds);
 
-            await using var scope = _factory.Services.CreateAsyncScope();
-            var db = scope.ServiceProvider.GetRequiredService<BattleGridDbContext>();
-            await CleanupTestUserAsync(db, request.Email);
+            await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
         }
 
         var average = timings.Average();
@@ -181,34 +156,21 @@ public sealed class AuthResponseTimeTests : IClassFixture<BattleGridApiFactory>,
     {
         if (!_databaseAvailable)
             return;
-        
+
         const int iterations = 5;
         var timings = new List<long>(iterations);
 
-        for (int i = 0; i < iterations; i++)
+        for (var i = 0; i < iterations; i++)
         {
-            var suffix = Guid.NewGuid().ToString("N")[..12];
-            const string password = "PerfTest_Pass123!";
+            var registerRequest = ApiIntegrationTestHelper.CreateUniqueRegisterRequest("perf");
 
-            var registerRequest = new RegisterRequestDto
-            {
-                UserName = $"perf_{suffix}",
-                Email = $"perf_{suffix}@battlegrid.test",
-                Password = password
-            };
-
-            using var registerResponse = await _client.PostAsJsonAsync(RegisterPath, registerRequest);
+            using var registerResponse = await ApiIntegrationTestHelper.RegisterAsync(_client, registerRequest);
             Assert.Equal(HttpStatusCode.OK, registerResponse.StatusCode);
+            await registerResponse.Content.ReadAsStringAsync();
 
-            var loginRequest = new LoginRequestDto
-            {
-                LoginInfo = registerRequest.Email,
-                Password = password
-            };
-
-            // Same moment as Login.razor: loading = true; await Api.LoginAsync(model);
             var stopwatch = Stopwatch.StartNew();
-            using var response = await _client.PostAsJsonAsync(LoginPath, loginRequest);
+            using var response = await ApiIntegrationTestHelper.LoginPostAsync(
+                _client, registerRequest.Email, registerRequest.Password);
             stopwatch.Stop();
 
             var loginResult = await response.Content.ReadFromJsonAsync<LoginResponseDto>();
@@ -221,9 +183,7 @@ public sealed class AuthResponseTimeTests : IClassFixture<BattleGridApiFactory>,
 
             timings.Add(stopwatch.ElapsedMilliseconds);
 
-            await using var scope = _factory.Services.CreateAsyncScope();
-            var db = scope.ServiceProvider.GetRequiredService<BattleGridDbContext>();
-            await CleanupTestUserAsync(db, registerRequest.Email);
+            await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, registerRequest.Email);
         }
 
         var average = timings.Average();
@@ -234,27 +194,5 @@ public sealed class AuthResponseTimeTests : IClassFixture<BattleGridApiFactory>,
         _output.WriteLine($"Login average: {average:F1} ms | min: {min} ms | max: {max} ms");
 
         Assert.True(average > 0);
-    }
-
-    /// <summary> Matches <see cref="BattleGrid.Web.Services.ApiService.RegisterAsync"/> body handling. </summary>
-    private static string ParseRegisterResponseBody(string body) => body.Trim().Trim('"');
-
-    /// <summary> Deletes test users from database after tests are complete. </summary>
-    private static async Task CleanupTestUserAsync(BattleGridDbContext db, string email)
-    {
-        var user = await db.User.FirstOrDefaultAsync(u => u.Email == email);
-        if (user is null)
-            return;
-
-        var sessions = await db.Session.Where(s => s.UserID == user.UserID).ToListAsync();
-        if (sessions.Count > 0)
-            db.Session.RemoveRange(sessions);
-
-        var stats = await db.PlayerStat.Where(p => p.UserID == user.UserID).ToListAsync();
-        if (stats.Count > 0)
-            db.PlayerStat.RemoveRange(stats);
-
-        db.User.Remove(user);
-        await db.SaveChangesAsync();
     }
 }
