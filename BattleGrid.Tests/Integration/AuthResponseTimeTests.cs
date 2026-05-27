@@ -62,7 +62,7 @@ public sealed class AuthResponseTimeTests : IClassFixture<BattleGridApiFactory>,
         var message = ApiIntegrationTestHelper.ParseRegisterResponseBody(body);
 
         _output.WriteLine($"Register response time: {stopwatch.ElapsedMilliseconds} ms");
-        _output.WriteLine($"HTTP {(int)response.StatusCode} — {message}");
+        _output.WriteLine($"HTTP {(int)response.StatusCode} - {message}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.Equal(ApiIntegrationTestHelper.ExpectedRegisterSuccessMessage, message);
@@ -98,7 +98,7 @@ public sealed class AuthResponseTimeTests : IClassFixture<BattleGridApiFactory>,
         var loginResult = await response.Content.ReadFromJsonAsync<LoginResponseDto>();
 
         _output.WriteLine($"Login response time: {stopwatch.ElapsedMilliseconds} ms");
-        _output.WriteLine($"HTTP {(int)response.StatusCode} — {loginResult?.Message}");
+        _output.WriteLine($"HTTP {(int)response.StatusCode} - {loginResult?.Message}");
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         Assert.NotNull(loginResult);

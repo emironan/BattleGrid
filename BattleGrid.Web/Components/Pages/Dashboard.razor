@@ -154,15 +154,15 @@ else
                     </p>
                     <button type="button" class="btn btn-danger btn-full mt-sm" @onclick="LeaveQueueFromDashboardAsync">LEAVE QUEUE</button>
                 }
-                <a href="/settings" class="btn btn-outline btn-full mt-sm">ACCOUNT SETTINGS</a>
                 <a href="/match-history" class="btn btn-outline btn-full mt-sm">MATCH HISTORY</a>
+                <a href="/settings" class="btn btn-outline btn-full mt-sm">ACCOUNT SETTINGS</a>                
                 @if (Auth.CurrentUser!.IsAdmin)
                 {
-                    <a href="/users" class="btn btn-outline btn-full">VIEW ALL OPERATORS</a>
+                    <a href="/admin" class="btn btn-outline btn-full">ADMIN PANEL</a>
                 }
                 @if (Auth.CurrentUser!.IsAdmin)
                 {
-                    <a href="http://localhost:4744/swagger" target="_blank" class="btn btn-outline btn-full">OPEN API DOCS ↗</a>
+                    <a href="/users" class="btn btn-outline btn-full">VIEW ALL PERSONNEL</a>
                 }
                 <button class="btn btn-danger btn-full" @onclick="Logout">LOGOUT</button>
             </div>
