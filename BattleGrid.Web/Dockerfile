@@ -1,10 +1,11 @@
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 WORKDIR /app
 
-# LINUX VE RENDER İÇİN KİLİT SATIR:
-# .NET 10 motoruna kesin olarak 8080 portunu dinlemesini emrediyoruz.
-# Bu satır olmadan Render ile Blazor Server arasındaki SignalR (Hub) bağlantısı kurulamaz.
-ENV ASPNETCORE_URLS=http://+:8080
+# RENDER'IN PORT EZME UYARISINI BİTİREN KESİN DÜZELTME:
+# Render ücretsiz planlarında portu "PORT" değişkeni üzerinden dikte eder.
+# Hem HTTP_PORTS'u hem de varsayılan portları tamamen 8080'e kilitliyoruz.
+ENV ASPNETCORE_HTTP_PORTS=8080
+ENV PORT=8080
 EXPOSE 8080
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
