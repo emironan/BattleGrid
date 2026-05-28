@@ -1,10 +1,9 @@
-﻿FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
+FROM ://microsoft.com AS base
 WORKDIR /app
 EXPOSE 8080
 
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM ://microsoft.com AS build
 WORKDIR /src
-
 
 COPY ["BattleGrid.Web/BattleGrid.Web.csproj",						  "BattleGrid.Web/"]
 COPY ["BattleGrid.Contracts/BattleGrid.Contracts.csproj",             "BattleGrid.Contracts/"]
@@ -19,4 +18,9 @@ RUN dotnet publish "BattleGrid.Web.csproj" -c Release -o /app/publish --no-resto
 FROM base AS final
 WORKDIR /app
 COPY --from=build /app/publish .
+
+# KRİTİK ÇÖZÜM: wwwroot klasörünü Docker konteynerının içine kesin olarak zorla kopyalar.
+COPY ["BattleGrid.Web/wwwroot", "./wwwroot"]
+
 ENTRYPOINT ["dotnet", "BattleGrid.Web.dll"]
+
