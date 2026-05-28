@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.StaticFiles; // 1. BU SATIR EN ÜSTTE OLACAK, ALTTA KALMAYACAK!
 using BattleGrid.Web.Services;
 using BattleGrid.Web.Components;
 using BattleGrid.Web.Components.Layout;
