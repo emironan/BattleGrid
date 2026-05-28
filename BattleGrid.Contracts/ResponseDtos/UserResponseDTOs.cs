@@ -1,6 +1,4 @@
-﻿using BattleGrid.Domain.Enums;
-
-namespace BattleGrid.Contracts.ResponseDtos
+﻿namespace BattleGrid.Contracts.ResponseDtos
 {
     public class UserResponseDto
     {

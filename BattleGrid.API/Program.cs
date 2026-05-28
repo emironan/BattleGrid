@@ -159,6 +159,7 @@ builder.Services.AddScoped<IShipPlacementServices, ShipPlacementServices>();
 builder.Services.AddSingleton<InMemoryMatchGameService>();
 builder.Services.AddScoped<IReplayServices, ReplayServices>();
 builder.Services.AddScoped<IBanListServices, BanListServices>();
+builder.Services.AddScoped<ILeaderboardService, LeaderboardService>();
 
 var app = builder.Build();
 

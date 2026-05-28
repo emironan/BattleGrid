@@ -414,4 +414,29 @@ public class ApiService
             return null;
         }
     }
+    public async Task<IEnumerable<LeaderboardEntryDto>?> GetCurrentSeasonLeaderboardAsync()
+    {
+        ApplyAuth();
+        try
+        {
+            return await _http.GetFromJsonAsync<IEnumerable<LeaderboardEntryDto>>("/api/Leaderboard/season");
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    public async Task<IEnumerable<LeaderboardEntryDto>?> GetAllTimeLeaderboardAsync()
+    {
+        ApplyAuth();
+        try
+        {
+            return await _http.GetFromJsonAsync<IEnumerable<LeaderboardEntryDto>>("/api/Leaderboard/all-time");
+        }
+        catch
+        {
+            return null;
+        }
+    }
 }
