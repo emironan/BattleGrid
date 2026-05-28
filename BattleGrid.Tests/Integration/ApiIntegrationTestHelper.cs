@@ -276,27 +276,13 @@ internal static class ApiIntegrationTestHelper
     {
         await using var scope = factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BattleGridDbContext>();
-
-        var moves = await db.MatchMove.Where(m => m.MatchID == matchId).ToListAsync();
-        if (moves.Count > 0)
-            db.MatchMove.RemoveRange(moves);
-
-        var placements = await db.ShipPlacement.Where(p => p.MatchID == matchId).ToListAsync();
-        if (placements.Count > 0)
-            db.ShipPlacement.RemoveRange(placements);
-
-        var spectators = await db.Spectator.Where(s => s.MatchID == matchId).ToListAsync();
-        if (spectators.Count > 0)
-            db.Spectator.RemoveRange(spectators);
-
-        var match = await db.Match.FirstOrDefaultAsync(m => m.MatchID == matchId);
-        if (match is not null)
-            db.Match.Remove(match);
-
-        await db.SaveChangesAsync();
+        await DeleteMatchOnDbAsync(db, matchId);
     }
 
     public static string ParseRegisterResponseBody(string body) => body.Trim().Trim('"');
+
+    public static Task CleanupTestUserAsync(BattleGridApiFactory factory, TestUserSession session) =>
+        CleanupTestUserAsync(factory, session.Email);
 
     public static async Task CleanupTestUserAsync(BattleGridApiFactory factory, string email)
     {
@@ -310,6 +296,8 @@ internal static class ApiIntegrationTestHelper
         var user = await db.User.FirstOrDefaultAsync(u => u.Email == email);
         if (user is null)
             return;
+
+        await DeleteMatchesForUserAsync(db, user.UserID);
 
         var bans = await db.BanList
             .Where(b => b.PlayerID == user.UserID
@@ -328,6 +316,38 @@ internal static class ApiIntegrationTestHelper
             db.PlayerStat.RemoveRange(stats);
 
         db.User.Remove(user);
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task DeleteMatchesForUserAsync(BattleGridDbContext db, int userId)
+    {
+        var matchIds = await db.Match
+            .Where(m => m.Player1ID == userId || m.Player2ID == userId)
+            .Select(m => m.MatchID)
+            .ToListAsync();
+
+        foreach (var matchId in matchIds)
+            await DeleteMatchOnDbAsync(db, matchId);
+    }
+
+    private static async Task DeleteMatchOnDbAsync(BattleGridDbContext db, int matchId)
+    {
+        var moves = await db.MatchMove.Where(m => m.MatchID == matchId).ToListAsync();
+        if (moves.Count > 0)
+            db.MatchMove.RemoveRange(moves);
+
+        var placements = await db.ShipPlacement.Where(p => p.MatchID == matchId).ToListAsync();
+        if (placements.Count > 0)
+            db.ShipPlacement.RemoveRange(placements);
+
+        var spectators = await db.Spectator.Where(s => s.MatchID == matchId).ToListAsync();
+        if (spectators.Count > 0)
+            db.Spectator.RemoveRange(spectators);
+
+        var match = await db.Match.FirstOrDefaultAsync(m => m.MatchID == matchId);
+        if (match is not null)
+            db.Match.Remove(match);
+
         await db.SaveChangesAsync();
     }
 }
