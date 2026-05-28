@@ -37,7 +37,19 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error");
 }
 
-app.UseStaticFiles();
+using Microsoft.AspNetCore.StaticFiles; // En üste eklemeyi unutma
+
+var provider = new FileExtensionContentTypeProvider();
+provider.Mappings[".js"] = "application/javascript";
+provider.Mappings[".br"] = "application/x-brotli";
+provider.Mappings[".gz"] = "application/x-gzip";
+
+app.UseStaticFiles(new StaticFileOptions
+{
+    ContentTypeProvider = provider,
+    ServeUnknownFileTypes = true
+});
+
 app.UseRouting();
 app.MapControllers();
 app.MapBlazorHub();
