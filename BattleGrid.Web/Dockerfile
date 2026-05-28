@@ -18,8 +18,6 @@ RUN dotnet publish "BattleGrid.Web.csproj" -c Release -o /app/publish --no-resto
 FROM base AS final
 WORKDIR /app
 COPY --from=build /app/publish .
-
-COPY ["BattleGrid.Web/wwwroot", "./wwwroot"]
-
+COPY ["BattleGrid.Web/wwwroot", "./wwwroot"]  <-- SADECE BU SATIRI EKLEDİN
 ENTRYPOINT ["dotnet", "BattleGrid.Web.dll"]
 
