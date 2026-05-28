@@ -1,4 +1,3 @@
-using Microsoft.AspNetCore.StaticFiles; 
 using BattleGrid.Web.Services;
 using BattleGrid.Web.Components;
 using BattleGrid.Web.Components.Layout;
@@ -38,19 +37,7 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error");
 }
 
-// ARADAKİ FAZLALIK USING SATIRINI BURADAN SİLDİK!
-
-var provider = new FileExtensionContentTypeProvider();
-provider.Mappings[".js"] = "application/javascript";
-provider.Mappings[".br"] = "application/x-brotli";
-provider.Mappings[".gz"] = "application/x-gzip";
-
-app.UseStaticFiles(new StaticFileOptions
-{
-    ContentTypeProvider = provider,
-    ServeUnknownFileTypes = true
-});
-
+app.MapStaticAssets();
 app.UseRouting();
 app.MapControllers();
 app.MapBlazorHub();
