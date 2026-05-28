@@ -96,12 +96,13 @@ public class ApiService
         }
     }
 
-    public async Task<List<UserResponseDto>?> GetAllUsersAsync()
+    public async Task<PagedUsersResponseDto?> GetUsersPageAsync(int page = 1, int pageSize = 20)
     {
         ApplyAuth();
         try
         {
-            return await _http.GetFromJsonAsync<List<UserResponseDto>>("/api/User/all");
+            return await _http.GetFromJsonAsync<PagedUsersResponseDto>(
+                $"/api/User/all?page={page}&pageSize={pageSize}");
         }
         catch
         {
