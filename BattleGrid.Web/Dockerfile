@@ -5,9 +5,9 @@ EXPOSE 8080
 FROM ://microsoft.com AS build
 WORKDIR /src
 
-COPY ["BattleGrid.Web/BattleGrid.Web.csproj",						  "BattleGrid.Web/"]
-COPY ["BattleGrid.Contracts/BattleGrid.Contracts.csproj",             "BattleGrid.Contracts/"]
-COPY ["BattleGrid.Domain/BattleGrid.Domain.csproj",                   "BattleGrid.Domain/"]
+COPY ["BattleGrid.Web/BattleGrid.Web.csproj", "BattleGrid.Web/"]
+COPY ["BattleGrid.Contracts/BattleGrid.Contracts.csproj", "BattleGrid.Contracts/"]
+COPY ["BattleGrid.Domain/BattleGrid.Domain.csproj", "BattleGrid.Domain/"]
 
 RUN dotnet restore "BattleGrid.Web/BattleGrid.Web.csproj"
 
@@ -19,7 +19,6 @@ FROM base AS final
 WORKDIR /app
 COPY --from=build /app/publish .
 
-# KRİTİK ÇÖZÜM: wwwroot klasörünü Docker konteynerının içine kesin olarak zorla kopyalar.
 COPY ["BattleGrid.Web/wwwroot", "./wwwroot"]
 
 ENTRYPOINT ["dotnet", "BattleGrid.Web.dll"]
