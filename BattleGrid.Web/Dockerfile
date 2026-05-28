@@ -1,13 +1,14 @@
-FROM ://microsoft.com AS base
+﻿FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 WORKDIR /app
 EXPOSE 8080
 
-FROM ://microsoft.com AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 
-COPY ["BattleGrid.Web/BattleGrid.Web.csproj", "BattleGrid.Web/"]
-COPY ["BattleGrid.Contracts/BattleGrid.Contracts.csproj", "BattleGrid.Contracts/"]
-COPY ["BattleGrid.Domain/BattleGrid.Domain.csproj", "BattleGrid.Domain/"]
+
+COPY ["BattleGrid.Web/BattleGrid.Web.csproj",						  "BattleGrid.Web/"]
+COPY ["BattleGrid.Contracts/BattleGrid.Contracts.csproj",             "BattleGrid.Contracts/"]
+COPY ["BattleGrid.Domain/BattleGrid.Domain.csproj",                   "BattleGrid.Domain/"]
 
 RUN dotnet restore "BattleGrid.Web/BattleGrid.Web.csproj"
 
@@ -18,6 +19,4 @@ RUN dotnet publish "BattleGrid.Web.csproj" -c Release -o /app/publish --no-resto
 FROM base AS final
 WORKDIR /app
 COPY --from=build /app/publish .
-COPY ["BattleGrid.Web/wwwroot", "./wwwroot"]  <-- SADECE BU SATIRI EKLEDİN
 ENTRYPOINT ["dotnet", "BattleGrid.Web.dll"]
-
