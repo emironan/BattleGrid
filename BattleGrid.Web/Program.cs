@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.StaticFiles; // 1. BU SATIR EN ÜSTTE OLACAK, ALTTA KALMAYACAK!
+using Microsoft.AspNetCore.StaticFiles; 
 using BattleGrid.Web.Services;
 using BattleGrid.Web.Components;
 using BattleGrid.Web.Components.Layout;
@@ -38,7 +38,7 @@ if (!app.Environment.IsDevelopment())
     app.UseExceptionHandler("/Error");
 }
 
-using Microsoft.AspNetCore.StaticFiles; // En üste eklemeyi unutma
+// ARADAKİ FAZLALIK USING SATIRINI BURADAN SİLDİK!
 
 var provider = new FileExtensionContentTypeProvider();
 provider.Mappings[".js"] = "application/javascript";
