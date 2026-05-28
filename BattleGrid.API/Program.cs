@@ -22,24 +22,44 @@ var builder = WebApplication.CreateBuilder(args);
 // Add services to the container.
 builder.Services.AddControllers();
 
-// Add CORS policy for deployment
+// Add CORS policy for deployment (extend via Cors:AllowedOrigins in config / Render env vars).
+var configuredCorsOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+var corsOrigins = configuredCorsOrigins
+    .Where(origin => !string.IsNullOrWhiteSpace(origin))
+    .Distinct(StringComparer.OrdinalIgnoreCase)
+    .ToArray();
+
+if (corsOrigins.Length == 0)
+{
+    corsOrigins =
+    [
+        "http://localhost:4744",                // http api localhost
+        "http://127.0.0.1:4744",                
+        "https://localhost:4743",               // https api locahost
+        "https://127.0.0.1:4743",
+        "http://localhost:4746",                // http web localhost
+        "http://127.0.0.1:4746",
+        "https://localhost:4745",               // https web localhost
+        "https://127.0.0.1:4745",
+        "http://api:8080",                      // api docker
+        "https://api:8080",
+        "http://web:8080",                      // web docker
+        "https://web:8080",
+        "http://battlegrid-api.onrender.com",   // api deployed
+        "https://battlegrid-api.onrender.com",
+        "http://battlegrid-web.onrender.com",   // web deployed
+        "https://battlegrid-web.onrender.com"
+    ];
+}
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowBlazorFrontend", policy =>
     {
-        // Since we are using cookies/credentials with SignalR, we MUST specify exact URLs:
-        policy//.AllowAnyOrigin()
-              .WithOrigins("http://localhost:4746",
-                           "http://127.0.0.1:4746",
-                           "https://localhost:4745",
-                           "https://127.0.0.1:4745",
-                           "http://api:8080",
-                           "https://api:8080",
-                           "http://web:8080",
-                           "https://web:8080")
+        policy.WithOrigins(corsOrigins)
               .AllowAnyMethod()
               .AllowAnyHeader()
-              .AllowCredentials(); // This accepts the cookies to be sent along with the request
+              .AllowCredentials();
     });
 });
 

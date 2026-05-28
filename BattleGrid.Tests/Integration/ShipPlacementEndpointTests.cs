@@ -4,29 +4,17 @@ using BattleGrid.Contracts.RequestDtos;
 
 namespace BattleGrid.Tests.Integration;
 
-public sealed class ShipPlacementEndpointTests : IClassFixture<BattleGridApiFactory>, IAsyncLifetime
+public sealed class ShipPlacementEndpointTests : IntegrationApiTestBase
 {
-    private readonly BattleGridApiFactory _factory;
-    private HttpClient _client = null!;
-    private bool _databaseAvailable;
-
-    public ShipPlacementEndpointTests(BattleGridApiFactory factory) => _factory = factory;
-
-    public async Task InitializeAsync()
-    {
-        _client = _factory.CreateClient();
-        _databaseAvailable = await _factory.CanConnectToDatabaseAsync();
-    }
-
-    public Task DisposeAsync() => Task.CompletedTask;
+    public ShipPlacementEndpointTests(BattleGridApiFactory factory) : base(factory) { }
 
     [Fact]
     public async Task PlaceShip_WithoutAuth_ReturnsUnauthorized()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
-        using var response = await _client.PostAsJsonAsync("/api/ShipPlacement/placeShip",
+        using var response = await Client.PostAsJsonAsync("/api/ShipPlacement/placeShip",
             new PlaceShipRequestDto
             {
                 PlayerID = 1,
@@ -43,17 +31,17 @@ public sealed class ShipPlacementEndpointTests : IClassFixture<BattleGridApiFact
     [Fact]
     public async Task PlaceShip_WithAuth_AndInvalidMatch_ReturnsUnauthorized()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? session = null;
         try
         {
-            session = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(_client, _factory);
+            session = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory);
             Assert.NotNull(session.Profile);
 
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, session.Tokens!.AccessToken);
+                Factory, session.Tokens!.AccessToken);
 
             using var response = await authClient.PostAsJsonAsync("/api/ShipPlacement/placeShip",
                 new PlaceShipRequestDto
@@ -71,7 +59,7 @@ public sealed class ShipPlacementEndpointTests : IClassFixture<BattleGridApiFact
         finally
         {
             if (session is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, session.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, session.Email);
         }
     }
 }

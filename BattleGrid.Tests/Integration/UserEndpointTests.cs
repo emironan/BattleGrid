@@ -5,34 +5,22 @@ using BattleGrid.Contracts.ResponseDtos;
 
 namespace BattleGrid.Tests.Integration;
 
-public sealed class UserEndpointTests : IClassFixture<BattleGridApiFactory>, IAsyncLifetime
+public sealed class UserEndpointTests : IntegrationApiTestBase
 {
-    private readonly BattleGridApiFactory _factory;
-    private HttpClient _client = null!;
-    private bool _databaseAvailable;
-
-    public UserEndpointTests(BattleGridApiFactory factory) => _factory = factory;
-
-    public async Task InitializeAsync()
-    {
-        _client = _factory.CreateClient();
-        _databaseAvailable = await _factory.CanConnectToDatabaseAsync();
-    }
-
-    public Task DisposeAsync() => Task.CompletedTask;
+    public UserEndpointTests(BattleGridApiFactory factory) : base(factory) { }
 
     [Fact]
     public async Task GetByLoginInfo_WithoutAuth_ReturnsUser()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest();
         try
         {
-            await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, request);
+            await ApiIntegrationTestHelper.RegisterUserForSetupAsync(Client, request);
 
-            var user = await _client.GetFromJsonAsync<UserResponseDto>(
+            var user = await Client.GetFromJsonAsync<UserResponseDto>(
                 $"/api/User/{Uri.EscapeDataString(request.Email)}");
 
             Assert.NotNull(user);
@@ -41,17 +29,17 @@ public sealed class UserEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
         }
         finally
         {
-            await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
+            await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, request.Email);
         }
     }
 
     [Fact]
     public async Task GetByLoginInfo_UnknownUser_ReturnsNotFound()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
-        using var response = await _client.GetAsync(
+        using var response = await Client.GetAsync(
             $"/api/User/{Uri.EscapeDataString("nobody@battlegrid.test")}");
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -60,15 +48,15 @@ public sealed class UserEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
     [Fact]
     public async Task GetMe_WithAuth_ReturnsCurrentUser()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? session = null;
         try
         {
-            session = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(_client, _factory);
+            session = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory);
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, session.Tokens!.AccessToken);
+                Factory, session.Tokens!.AccessToken);
 
             var me = await authClient.GetFromJsonAsync<UserResponseDto>("/api/User/me");
 
@@ -79,48 +67,48 @@ public sealed class UserEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
         finally
         {
             if (session is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, session.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, session.Email);
         }
     }
 
     [Fact]
     public async Task GetMe_WithoutAuth_ReturnsUnauthorized()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
-        using var response = await _client.GetAsync("/api/User/me");
+        using var response = await Client.GetAsync("/api/User/me");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
     public async Task GetUserById_WithoutAuth_ReturnsUnauthorized()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
-        using var response = await _client.GetAsync("/api/User/1");
+        using var response = await Client.GetAsync("/api/User/1");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
     public async Task GetUserById_WithAuth_ReturnsUser()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? session = null;
         try
         {
-            session = await ApiIntegrationTestHelper.CreateRegisteredUserAsync(_client);
+            session = await ApiIntegrationTestHelper.CreateRegisteredUserAsync(Client);
             Assert.NotNull(session.Profile);
 
             var tokens = await ApiIntegrationTestHelper.LoginAsync(
-                _client, session.Email, session.Password);
+                Client, session.Email, session.Password);
             Assert.NotNull(tokens);
 
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, tokens.AccessToken);
+                Factory, tokens.AccessToken);
 
             var user = await authClient.GetFromJsonAsync<UserResponseDto>(
                 $"/api/User/{session.Profile.UserID}");
@@ -131,22 +119,22 @@ public sealed class UserEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
         finally
         {
             if (session is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, session.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, session.Email);
         }
     }
 
     [Fact]
     public async Task GetAllUsers_AsNonAdmin_ReturnsForbidden()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? session = null;
         try
         {
-            session = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(_client, _factory);
+            session = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory);
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, session.Tokens!.AccessToken);
+                Factory, session.Tokens!.AccessToken);
 
             using var response = await authClient.GetAsync("/api/User/all");
             Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -154,32 +142,32 @@ public sealed class UserEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
         finally
         {
             if (session is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, session.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, session.Email);
         }
     }
 
     [Fact]
     public async Task GetAllUsers_WithoutAuth_ReturnsUnauthorized()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
-        using var response = await _client.GetAsync("/api/User/all");
+        using var response = await Client.GetAsync("/api/User/all");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
     public async Task GetAllUsers_AsAdmin_ReturnsOk()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? session = null;
         try
         {
-            session = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(_client, _factory, asAdmin: true);
+            session = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory, asAdmin: true);
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, session.Tokens!.AccessToken);
+                Factory, session.Tokens!.AccessToken);
 
             using var response = await authClient.GetAsync("/api/User/all?page=1&pageSize=20");
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -194,22 +182,22 @@ public sealed class UserEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
         finally
         {
             if (session is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, session.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, session.Email);
         }
     }
 
     [Fact]
     public async Task GetBanStatus_WithAuth_ReturnsOk()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? session = null;
         try
         {
-            session = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(_client, _factory);
+            session = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory);
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, session.Tokens!.AccessToken);
+                Factory, session.Tokens!.AccessToken);
 
             var status = await authClient.GetFromJsonAsync<UserBanStatusResponseDto>("/api/User/ban-status");
 
@@ -219,32 +207,32 @@ public sealed class UserEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
         finally
         {
             if (session is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, session.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, session.Email);
         }
     }
 
     [Fact]
     public async Task GetBanStatus_WithoutAuth_ReturnsUnauthorized()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
-        using var response = await _client.GetAsync("/api/User/ban-status");
+        using var response = await Client.GetAsync("/api/User/ban-status");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
     public async Task GetCurrentSeasonStats_WithAuth_ReturnsOk()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? session = null;
         try
         {
-            session = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(_client, _factory);
+            session = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory);
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, session.Tokens!.AccessToken);
+                Factory, session.Tokens!.AccessToken);
 
             var stats = await authClient.GetFromJsonAsync<PlayerSeasonStatsResponseDto>(
                 "/api/User/stats/current-season");
@@ -256,27 +244,27 @@ public sealed class UserEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
         finally
         {
             if (session is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, session.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, session.Email);
         }
     }
 
     [Fact]
     public async Task GetCurrentSeasonStats_WithoutAuth_ReturnsUnauthorized()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
-        using var response = await _client.GetAsync("/api/User/stats/current-season");
+        using var response = await Client.GetAsync("/api/User/stats/current-season");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
     public async Task ChangeEmail_WithoutAuth_ReturnsUnauthorized()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
-        using var response = await _client.PatchAsJsonAsync("/api/User/email", new ChangeEmailRequestDto
+        using var response = await Client.PatchAsJsonAsync("/api/User/email", new ChangeEmailRequestDto
         {
             NewEmail = "x@test.com",
             Password = "x"
@@ -288,10 +276,10 @@ public sealed class UserEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
     [Fact]
     public async Task ChangeUsername_WithoutAuth_ReturnsUnauthorized()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
-        using var response = await _client.PatchAsJsonAsync("/api/User/username", new ChangeUsernameRequestDto
+        using var response = await Client.PatchAsJsonAsync("/api/User/username", new ChangeUsernameRequestDto
         {
             NewUserName = "x_name",
             Password = "x"
@@ -303,10 +291,10 @@ public sealed class UserEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
     [Fact]
     public async Task DeactivateAccount_WithoutAuth_ReturnsUnauthorized()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
-        using var response = await _client.PatchAsJsonAsync("/api/User/deactivate", new DeactivateAccountRequestDto
+        using var response = await Client.PatchAsJsonAsync("/api/User/deactivate", new DeactivateAccountRequestDto
         {
             Password = "x"
         });

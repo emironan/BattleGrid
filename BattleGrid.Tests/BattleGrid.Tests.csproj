@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\BattleGrid.API\BattleGrid.API.csproj" />
+    <ProjectReference Include="..\BattleGrid.Application\BattleGrid.Application.csproj" />
     <ProjectReference Include="..\BattleGrid.Contracts\BattleGrid.Contracts.csproj" />
     <ProjectReference Include="..\BattleGrid.Domain\BattleGrid.Domain.csproj" />
     <ProjectReference Include="..\BattleGrid.Infrastructure\BattleGrid.Infrastructure.csproj" />

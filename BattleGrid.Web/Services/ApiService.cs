@@ -388,6 +388,20 @@ public class ApiService
         }
     }
 
+    public async Task<GeneralResponseDto?> GrantAdminAsync(GrantAdminRequestDto request)
+    {
+        ApplyAuth();
+        try
+        {
+            var resp = await _http.PostAsJsonAsync("/api/Admin/players/grant-admin", request);
+            return await resp.Content.ReadFromJsonAsync<GeneralResponseDto>();
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public async Task<AdminUserProfileResponseDto?> GetAdminUserProfileAsync(int userId)
     {
         ApplyAuth();
@@ -415,12 +429,12 @@ public class ApiService
             return null;
         }
     }
-    public async Task<IEnumerable<LeaderboardEntryDto>?> GetCurrentSeasonLeaderboardAsync()
+    public async Task<LeaderboardListResponseDto?> GetCurrentSeasonLeaderboardAsync()
     {
         ApplyAuth();
         try
         {
-            return await _http.GetFromJsonAsync<IEnumerable<LeaderboardEntryDto>>("/api/Leaderboard/season");
+            return await _http.GetFromJsonAsync<LeaderboardListResponseDto>("/api/Leaderboard/season");
         }
         catch
         {
@@ -428,12 +442,12 @@ public class ApiService
         }
     }
 
-    public async Task<IEnumerable<LeaderboardEntryDto>?> GetAllTimeLeaderboardAsync()
+    public async Task<LeaderboardListResponseDto?> GetAllTimeLeaderboardAsync()
     {
         ApplyAuth();
         try
         {
-            return await _http.GetFromJsonAsync<IEnumerable<LeaderboardEntryDto>>("/api/Leaderboard/all-time");
+            return await _http.GetFromJsonAsync<LeaderboardListResponseDto>("/api/Leaderboard/all-time");
         }
         catch
         {

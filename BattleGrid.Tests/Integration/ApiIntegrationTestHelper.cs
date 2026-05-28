@@ -13,6 +13,9 @@ namespace BattleGrid.Tests.Integration;
 
 internal static class ApiIntegrationTestHelper
 {
+    private static readonly AsyncLocal<IntegrationTestDataTracker?> ActiveTracker = new();
+
+    public const string TestEmailDomain = "@battlegrid.test";
     public const string RegisterPath = "/api/Auth/register";
     public const string LoginPath = "/api/Auth/login";
     public const string LogoutPath = "/api/Auth/logout";
@@ -20,13 +23,24 @@ internal static class ApiIntegrationTestHelper
     public const string ExpectedRegisterSuccessMessage = "User registered succesfully.";
     public const string DefaultTestPassword = "PerfTest_Pass123!";
 
+    public static void BindTracker(IntegrationTestDataTracker? tracker) => ActiveTracker.Value = tracker;
+
+    public static void TrackEmail(string email) => ActiveTracker.Value?.TrackEmail(email);
+
+    public static void TrackSession(TestUserSession session) => ActiveTracker.Value?.TrackSession(session);
+
+    public static void TrackMatch(int matchId) => ActiveTracker.Value?.TrackMatch(matchId);
+
+    public static bool IsIntegrationTestEmail(string email) =>
+        email.EndsWith(TestEmailDomain, StringComparison.OrdinalIgnoreCase);
+
     public static RegisterRequestDto CreateUniqueRegisterRequest(string userNamePrefix = "api")
     {
         var suffix = Guid.NewGuid().ToString("N")[..12];
         return new RegisterRequestDto
         {
             UserName = $"{userNamePrefix}_{suffix}",
-            Email = $"{userNamePrefix}_{suffix}@battlegrid.test",
+            Email = $"{userNamePrefix}_{suffix}{TestEmailDomain}",
             Password = DefaultTestPassword,
             ConfirmPassword = DefaultTestPassword
         };
@@ -43,7 +57,11 @@ internal static class ApiIntegrationTestHelper
     {
         using var response = await RegisterAsync(client, request);
         var body = await response.Content.ReadAsStringAsync();
-        return (response.StatusCode, ParseRegisterResponseBody(body));
+        var status = response.StatusCode;
+        if (status == HttpStatusCode.OK)
+            TrackEmail(request.Email);
+
+        return (status, ParseRegisterResponseBody(body));
     }
 
     /// <summary>Register a user for test setup (login, user, match fixtures). Not for timing register itself.</summary>
@@ -97,7 +115,9 @@ internal static class ApiIntegrationTestHelper
         var profile = await client.GetFromJsonAsync<UserResponseDto>(
             $"/api/User/{Uri.EscapeDataString(request.Email)}");
 
-        return new TestUserSession(request, profile);
+        var session = new TestUserSession(request, profile);
+        TrackSession(session);
+        return session;
     }
 
     public static async Task<TestUserSession> CreateLoggedInUserAsync(
@@ -116,7 +136,9 @@ internal static class ApiIntegrationTestHelper
         var profile = await client.GetFromJsonAsync<UserResponseDto>(
             $"/api/User/{Uri.EscapeDataString(session.Request.Email)}");
 
-        return session with { Tokens = tokens, Profile = profile };
+        session = session with { Tokens = tokens, Profile = profile };
+        TrackSession(session);
+        return session;
     }
 
     public static async Task PromoteToAdminAsync(BattleGridApiFactory factory, string email)
@@ -132,6 +154,51 @@ internal static class ApiIntegrationTestHelper
 
     public static Task<HttpResponseMessage> PostAdvanceSeasonAsync(HttpClient client) =>
         client.PostAsync(AdvanceSeasonPath, null);
+
+    public static async Task<int> GetNextGlobalSeasonNoAsync(BattleGridApiFactory factory)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BattleGridDbContext>();
+        return await db.PlayerStat.AnyAsync()
+            ? await db.PlayerStat.MaxAsync(p => p.SeasonNo) + 1
+            : 1;
+    }
+
+    public static async Task SeedCurrentSeasonLeaderboardAsync(
+        BattleGridApiFactory factory,
+        IReadOnlyList<(int UserId, int Rating)> entries,
+        int? seasonNo = null)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BattleGridDbContext>();
+
+        var season = seasonNo ?? await GetNextGlobalSeasonNoAsync(factory);
+
+        foreach (var (userId, rating) in entries)
+        {
+            var existing = await db.PlayerStat
+                .FirstOrDefaultAsync(p => p.UserID == userId && p.SeasonNo == season);
+            if (existing is not null)
+            {
+                existing.Rating = rating;
+                existing.HighestRating = Math.Max(existing.HighestRating, rating);
+                continue;
+            }
+
+            db.PlayerStat.Add(new PlayerStat
+            {
+                UserID = userId,
+                SeasonNo = season,
+                Rating = rating,
+                HighestRating = rating,
+                MatchesPlayed = 1,
+                MatchesWon = 0,
+                WinRate = 0
+            });
+        }
+
+        await db.SaveChangesAsync();
+    }
 
     public static async Task DeletePlayerStatSeasonAsync(
         BattleGridApiFactory factory,
@@ -207,6 +274,7 @@ internal static class ApiIntegrationTestHelper
         });
 
         await db.SaveChangesAsync();
+        TrackMatch(match.MatchID);
         return match.MatchID;
     }
 
@@ -234,6 +302,7 @@ internal static class ApiIntegrationTestHelper
 
         await db.Match.AddAsync(match);
         await db.SaveChangesAsync();
+        TrackMatch(match.MatchID);
         return match.MatchID;
     }
 
@@ -266,6 +335,7 @@ internal static class ApiIntegrationTestHelper
 
         await db.Match.AddAsync(match);
         await db.SaveChangesAsync();
+        TrackMatch(match.MatchID);
         return match.MatchID;
     }
 
@@ -280,6 +350,20 @@ internal static class ApiIntegrationTestHelper
     }
 
     public static string ParseRegisterResponseBody(string body) => body.Trim().Trim('"');
+
+    /// <summary>
+    /// Registers via API; tracks email when HTTP 200 so <see cref="IntegrationApiTestBase"/> can tear down.
+    /// </summary>
+    public static async Task<HttpResponseMessage> RegisterAndTrackOnSuccessAsync(
+        HttpClient client,
+        RegisterRequestDto request)
+    {
+        var response = await RegisterAsync(client, request);
+        if (response.IsSuccessStatusCode)
+            TrackEmail(request.Email);
+
+        return response;
+    }
 
     public static Task CleanupTestUserAsync(BattleGridApiFactory factory, TestUserSession session) =>
         CleanupTestUserAsync(factory, session.Email);
@@ -349,6 +433,24 @@ internal static class ApiIntegrationTestHelper
             db.Match.Remove(match);
 
         await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Safety net for leaked rows from past runs or failed tests. Only touches integration-test emails.
+    /// </summary>
+    public static async Task CleanupOrphanedIntegrationUsersAsync(BattleGridApiFactory factory)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BattleGridDbContext>();
+
+        var emails = await db.User
+            .AsNoTracking()
+            .Where(u => u.Email.EndsWith(TestEmailDomain))
+            .Select(u => u.Email)
+            .ToListAsync();
+
+        foreach (var email in emails)
+            await CleanupTestUserAsync(db, email);
     }
 }
 

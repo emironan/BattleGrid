@@ -3,20 +3,17 @@ using BattleGrid.Contracts.ResponseDtos;
 
 namespace BattleGrid.Tests.Integration;
 
-public sealed class ShipTypeEndpointTests : IClassFixture<BattleGridApiFactory>
+public sealed class ShipTypeEndpointTests : IntegrationApiTestBase
 {
-    private readonly BattleGridApiFactory _factory;
-
-    public ShipTypeEndpointTests(BattleGridApiFactory factory) => _factory = factory;
+    public ShipTypeEndpointTests(BattleGridApiFactory factory) : base(factory) { }
 
     [Fact]
     public async Task GetAll_ReturnsShipList()
     {
-        if (!await _factory.CanConnectToDatabaseAsync())
+        if (!DatabaseAvailable)
             return;
 
-        using var client = _factory.CreateClient();
-        var ships = await client.GetFromJsonAsync<List<ShipTypeListResponseDto>>("/api/ShipType/all");
+        var ships = await Client.GetFromJsonAsync<List<ShipTypeListResponseDto>>("/api/ShipType/all");
 
         Assert.NotNull(ships);
         Assert.NotEmpty(ships);

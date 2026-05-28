@@ -1,11 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-
-namespace BattleGrid.Contracts.ResponseDtos;
+﻿namespace BattleGrid.Contracts.ResponseDtos;
 
 public class LeaderboardEntryDto
 {
+    public int UserId { get; set; }
     public int Rank { get; set; }
     public string UserName { get; set; } = string.Empty;
     public int Rating { get; set; }
@@ -14,4 +11,11 @@ public class LeaderboardEntryDto
     public decimal WinRate { get; set; }
 
     public int SeasonNo { get; set; }
+}
+
+public class LeaderboardListResponseDto
+{
+    public IReadOnlyList<LeaderboardEntryDto> Entries { get; set; } = [];
+
+    public int PageSize { get; set; } = LeaderboardLimits.PageSize;
 }

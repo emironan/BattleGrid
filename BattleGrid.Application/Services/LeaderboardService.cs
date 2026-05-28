@@ -1,4 +1,6 @@
-﻿using BattleGrid.Application.Interfaces;
+﻿using BattleGrid.Application.Helpers;
+using BattleGrid.Application.Interfaces;
+using BattleGrid.Contracts;
 using BattleGrid.Contracts.ResponseDtos;
 using BattleGrid.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
@@ -8,27 +10,69 @@ namespace BattleGrid.Application.Services;
 public class LeaderboardService : ILeaderboardService
 {
     private readonly BattleGridDbContext _context;
+    private readonly IPlayerStatSeasonService _playerStatSeason;
 
-    public LeaderboardService(BattleGridDbContext context)
+    public LeaderboardService(
+        BattleGridDbContext context,
+        IPlayerStatSeasonService playerStatSeason)
     {
         _context = context;
+        _playerStatSeason = playerStatSeason;
     }
 
-    public async Task<IEnumerable<LeaderboardEntryDto>> GetCurrentSeasonLeaderboardAsync(CancellationToken cancellationToken = default)
+    public async Task<LeaderboardListResponseDto> GetCurrentSeasonLeaderboardAsync(
+        int? viewerUserId = null,
+        CancellationToken cancellationToken = default)
     {
-        bool hasStats = await _context.PlayerStat.AnyAsync(cancellationToken);
+        var currentSeasonNo = await _playerStatSeason.GetGlobalCurrentSeasonNoAsync(cancellationToken);
 
-        int currentSeasonNo = hasStats
-            ? await _context.PlayerStat.MaxAsync(ps => ps.SeasonNo, cancellationToken)
-            : 1;
+        var ranked = await LoadCurrentSeasonRankedAsync(currentSeasonNo, cancellationToken);
 
+        if (viewerUserId is { } viewerId && ranked.All(e => e.UserId != viewerId))
+        {
+            await _playerStatSeason.EnsureMatchmakingRatingAsync(viewerId, cancellationToken);
+            ranked = await LoadCurrentSeasonRankedAsync(currentSeasonNo, cancellationToken);
+        }
+
+        LeaderboardWindowBuilder.AssignRanks(ranked);
+
+        var entries = LeaderboardWindowBuilder.BuildDisplayList(ranked, viewerUserId);
+        return ToResponse(entries);
+    }
+
+    public async Task<LeaderboardListResponseDto> GetAllTimeLeaderboardAsync(
+        int? viewerUserId = null,
+        CancellationToken cancellationToken = default)
+    {
         var rawStats = await _context.PlayerStat
+            .Join(
+                _context.User,
+                ps => ps.UserID,
+                u => u.UserID,
+                (ps, u) => new { ps, u })
+            .ToListAsync(cancellationToken);
+
+        var ranked = LeaderboardAllTimeBuilder.BuildRankedList(
+            rawStats.Select(x => (x.ps, x.u.UserName)));
+
+        LeaderboardWindowBuilder.AssignRanks(ranked);
+
+        var entries = LeaderboardWindowBuilder.BuildDisplayList(ranked, viewerUserId);
+        return ToResponse(entries);
+    }
+
+    private async Task<List<LeaderboardEntryDto>> LoadCurrentSeasonRankedAsync(
+        int currentSeasonNo,
+        CancellationToken cancellationToken) =>
+        await _context.PlayerStat
             .Where(ps => ps.SeasonNo == currentSeasonNo)
-            .Join(_context.User, 
+            .Join(
+                _context.User,
                 ps => ps.UserID,
                 u => u.UserID,
                 (ps, u) => new LeaderboardEntryDto
                 {
+                    UserId = u.UserID,
                     UserName = u.UserName,
                     Rating = ps.Rating,
                     MatchesPlayed = ps.MatchesPlayed,
@@ -37,57 +81,13 @@ public class LeaderboardService : ILeaderboardService
                     SeasonNo = ps.SeasonNo
                 })
             .OrderByDescending(x => x.Rating)
+            .ThenBy(x => x.UserId)
             .ToListAsync(cancellationToken);
 
-        for (int i = 0; i < rawStats.Count; i++)
+    private static LeaderboardListResponseDto ToResponse(IReadOnlyList<LeaderboardEntryDto> entries) =>
+        new()
         {
-            rawStats[i].Rank = i + 1;
-        }
-
-        return rawStats;
-    }
-
-    public async Task<IEnumerable<LeaderboardEntryDto>> GetAllTimeLeaderboardAsync(CancellationToken cancellationToken = default)
-    {
-        // 1. Veritabanındaki tüm satırları User tablosuyla ID'ler üzerinden düzgünce bağlıyoruz
-        var rawStats = await _context.PlayerStat
-            .Join(_context.User,
-                ps => ps.UserID,
-                u => u.UserID, // Hatalı olan u.User kısmını u.UserID olarak düzelttik!
-                (ps, u) => new { ps, u })
-            .ToListAsync(cancellationToken);
-
-        // 2. Çektiğimiz verileri hafızada kullanıcı adına göre gruplayıp tekilleştiriyoruz
-        var groupedStats = rawStats
-            .GroupBy(x => x.u.UserName)
-            .Select(g => {
-                // Oyuncunun tüm kayıtları arasından HighestRating'i en yüksek olan en iyi sezonunu buluyoruz
-                var bestSeason = g.OrderByDescending(x => x.ps.HighestRating).First();
-
-                return new LeaderboardEntryDto
-                {
-                    UserName = g.Key,
-                    // Tüm zamanlar tablosunda zirve noktayı (HighestRating) gösteriyoruz
-                    Rating = bestSeason.ps.HighestRating,
-                    // Kariyeri boyunca oynadığı toplam maçları topluyoruz
-                    MatchesPlayed = g.Sum(x => x.ps.MatchesPlayed),
-                    MatchesWon = g.Sum(x => x.ps.MatchesWon),
-                    // Toplam kariyer galibiyet oranını hesaplıyoruz
-                    WinRate = g.Sum(x => x.ps.MatchesPlayed) > 0
-                        ? Math.Round((decimal)g.Sum(x => x.ps.MatchesWon) / g.Sum(x => x.ps.MatchesPlayed) * 100, 2)
-                        : 0,
-                    SeasonNo = bestSeason.ps.SeasonNo
-                };
-            })
-            .OrderByDescending(x => x.Rating) // En yüksek zirve reytingine göre sırala
-            .ToList();
-
-        // 3. Sıralama numaralarını (Rank) baştan yazıyoruz
-        for (int i = 0; i < groupedStats.Count; i++)
-        {
-            groupedStats[i].Rank = i + 1;
-        }
-
-        return groupedStats;
-    }
+            Entries = entries,
+            PageSize = LeaderboardLimits.PageSize
+        };
 }

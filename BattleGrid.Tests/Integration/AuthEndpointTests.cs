@@ -5,66 +5,54 @@ using BattleGrid.Contracts.ResponseDtos;
 
 namespace BattleGrid.Tests.Integration;
 
-public sealed class AuthEndpointTests : IClassFixture<BattleGridApiFactory>, IAsyncLifetime
+public sealed class AuthEndpointTests : IntegrationApiTestBase
 {
-    private readonly BattleGridApiFactory _factory;
-    private HttpClient _client = null!;
-    private bool _databaseAvailable;
-
-    public AuthEndpointTests(BattleGridApiFactory factory) => _factory = factory;
-
-    public async Task InitializeAsync()
-    {
-        _client = _factory.CreateClient();
-        _databaseAvailable = await _factory.CanConnectToDatabaseAsync();
-    }
-
-    public Task DisposeAsync() => Task.CompletedTask;
+    public AuthEndpointTests(BattleGridApiFactory factory) : base(factory) { }
 
     [Fact]
     public async Task Register_WithValidPayload_ReturnsOk()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest();
         try
         {
-            var (status, message) = await ApiIntegrationTestHelper.RegisterAndReadAsync(_client, request);
+            var (status, message) = await ApiIntegrationTestHelper.RegisterAndReadAsync(Client, request);
             Assert.Equal(HttpStatusCode.OK, status);
             Assert.Equal(ApiIntegrationTestHelper.ExpectedRegisterSuccessMessage, message);
         }
         finally
         {
-            await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
+            await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, request.Email);
         }
     }
 
     [Fact]
     public async Task Register_WithDuplicateEmail_ReturnsBadRequest()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest();
         try
         {
-            var first = await ApiIntegrationTestHelper.RegisterAndReadAsync(_client, request);
+            var first = await ApiIntegrationTestHelper.RegisterAndReadAsync(Client, request);
             Assert.Equal(HttpStatusCode.OK, first.StatusCode);
 
-            var duplicate = await ApiIntegrationTestHelper.RegisterAndReadAsync(_client, request);
+            var duplicate = await ApiIntegrationTestHelper.RegisterAndReadAsync(Client, request);
             Assert.Equal(HttpStatusCode.BadRequest, duplicate.StatusCode);
         }
         finally
         {
-            await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
+            await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, request.Email);
         }
     }
 
     [Fact]
     public async Task Register_WithDuplicateUsername_ReturnsBadRequest()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         var first = ApiIntegrationTestHelper.CreateUniqueRegisterRequest();
@@ -73,45 +61,45 @@ public sealed class AuthEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
 
         try
         {
-            var firstResponse = await ApiIntegrationTestHelper.RegisterAndReadAsync(_client, first);
+            var firstResponse = await ApiIntegrationTestHelper.RegisterAndReadAsync(Client, first);
             Assert.Equal(HttpStatusCode.OK, firstResponse.StatusCode);
 
-            var duplicate = await ApiIntegrationTestHelper.RegisterAndReadAsync(_client, second);
+            var duplicate = await ApiIntegrationTestHelper.RegisterAndReadAsync(Client, second);
             Assert.Equal(HttpStatusCode.BadRequest, duplicate.StatusCode);
         }
         finally
         {
-            await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, first.Email);
-            await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, second.Email);
+            await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, first.Email);
+            await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, second.Email);
         }
     }
 
     [Fact]
     public async Task Register_WithMismatchedPasswords_ReturnsBadRequest()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest();
         request.ConfirmPassword = "Different_Password_123!";
 
-        var (status, _) = await ApiIntegrationTestHelper.RegisterAndReadAsync(_client, request);
+        var (status, _) = await ApiIntegrationTestHelper.RegisterAndReadAsync(Client, request);
         Assert.Equal(HttpStatusCode.BadRequest, status);
     }
 
     [Fact]
     public async Task Login_WithValidCredentials_ReturnsTokens()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest();
         try
         {
-            await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, request);
+            await ApiIntegrationTestHelper.RegisterUserForSetupAsync(Client, request);
 
             var tokens = await ApiIntegrationTestHelper.LoginAsync(
-                _client, request.Email, request.Password);
+                Client, request.Email, request.Password);
 
             Assert.NotNull(tokens);
             Assert.True(tokens.Success);
@@ -120,40 +108,40 @@ public sealed class AuthEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
         }
         finally
         {
-            await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
+            await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, request.Email);
         }
     }
 
     [Fact]
     public async Task Login_WithWrongPassword_ReturnsUnauthorized()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest();
         try
         {
-            await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, request);
+            await ApiIntegrationTestHelper.RegisterUserForSetupAsync(Client, request);
 
             using var response = await ApiIntegrationTestHelper.LoginPostAsync(
-                _client, request.Email, "wrong-password");
+                Client, request.Email, "wrong-password");
 
             Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
         }
         finally
         {
-            await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
+            await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, request.Email);
         }
     }
 
     [Fact]
     public async Task Login_WithNonExistingEmail_ReturnsUnauthorized()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         using var response = await ApiIntegrationTestHelper.LoginPostAsync(
-            _client, $"missing_{Guid.NewGuid():N}@battlegrid.test", "random-password");
+            Client, $"missing_{Guid.NewGuid():N}@battlegrid.test", "random-password");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
@@ -161,11 +149,11 @@ public sealed class AuthEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
     [Fact]
     public async Task Login_WithNonExistingUsername_ReturnsUnauthorized()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         using var response = await ApiIntegrationTestHelper.LoginPostAsync(
-            _client, $"missing_user_{Guid.NewGuid():N}", "random-password");
+            Client, $"missing_user_{Guid.NewGuid():N}", "random-password");
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
@@ -173,43 +161,43 @@ public sealed class AuthEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
     [Fact]
     public async Task Logout_WithRefreshToken_ReturnsOk()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest();
         try
         {
-            await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, request);
+            await ApiIntegrationTestHelper.RegisterUserForSetupAsync(Client, request);
             var tokens = await ApiIntegrationTestHelper.LoginAsync(
-                _client, request.Email, request.Password);
+                Client, request.Email, request.Password);
             Assert.NotNull(tokens);
 
-            using var response = await _client.PostAsJsonAsync(ApiIntegrationTestHelper.LogoutPath,
+            using var response = await Client.PostAsJsonAsync(ApiIntegrationTestHelper.LogoutPath,
                 new RefreshTokenRequestDto { RefreshToken = tokens.RefreshToken });
 
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         }
         finally
         {
-            await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
+            await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, request.Email);
         }
     }
 
     [Fact]
     public async Task Refresh_WithValidRefreshToken_ReturnsNewAccessToken()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest();
         try
         {
-            await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, request);
+            await ApiIntegrationTestHelper.RegisterUserForSetupAsync(Client, request);
             var tokens = await ApiIntegrationTestHelper.LoginAsync(
-                _client, request.Email, request.Password);
+                Client, request.Email, request.Password);
             Assert.NotNull(tokens);
 
-            using var response = await _client.PostAsJsonAsync(ApiIntegrationTestHelper.RefreshPath,
+            using var response = await Client.PostAsJsonAsync(ApiIntegrationTestHelper.RefreshPath,
                 new RefreshTokenRequestDto { RefreshToken = tokens.RefreshToken });
 
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -220,17 +208,17 @@ public sealed class AuthEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
         }
         finally
         {
-            await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
+            await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, request.Email);
         }
     }
 
     [Fact]
     public async Task UpdatePassword_WithoutAuth_ReturnsUnauthorized()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
-        using var response = await _client.PatchAsJsonAsync("/api/Auth/password", new PasswordUpdateRequestDto
+        using var response = await Client.PatchAsJsonAsync("/api/Auth/password", new PasswordUpdateRequestDto
         {
             OldPassword = "old",
             NewPassword = "new",
@@ -243,20 +231,20 @@ public sealed class AuthEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
     [Fact]
     public async Task UpdatePassword_WithAuth_ReturnsOk()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest();
         const string newPassword = "NewSecure_Pass456!";
         try
         {
-            await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, request);
+            await ApiIntegrationTestHelper.RegisterUserForSetupAsync(Client, request);
             var tokens = await ApiIntegrationTestHelper.LoginAsync(
-                _client, request.Email, request.Password);
+                Client, request.Email, request.Password);
             Assert.NotNull(tokens);
 
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, tokens.AccessToken);
+                Factory, tokens.AccessToken);
 
             using var response = await authClient.PatchAsJsonAsync("/api/Auth/password",
                 new PasswordUpdateRequestDto
@@ -268,32 +256,32 @@ public sealed class AuthEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
 
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
 
-            var relogin = await ApiIntegrationTestHelper.LoginAsync(_client, request.Email, newPassword);
+            var relogin = await ApiIntegrationTestHelper.LoginAsync(Client, request.Email, newPassword);
             Assert.NotNull(relogin);
             Assert.True(relogin.Success);
         }
         finally
         {
-            await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
+            await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, request.Email);
         }
     }
 
     [Fact]
     public async Task UpdatePassword_WithMismatchedConfirmation_ReturnsBadRequest()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest();
         try
         {
-            await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, request);
+            await ApiIntegrationTestHelper.RegisterUserForSetupAsync(Client, request);
             var tokens = await ApiIntegrationTestHelper.LoginAsync(
-                _client, request.Email, request.Password);
+                Client, request.Email, request.Password);
             Assert.NotNull(tokens);
 
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, tokens.AccessToken);
+                Factory, tokens.AccessToken);
 
             using var response = await authClient.PatchAsJsonAsync("/api/Auth/password",
                 new PasswordUpdateRequestDto
@@ -307,26 +295,26 @@ public sealed class AuthEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
         }
         finally
         {
-            await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
+            await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, request.Email);
         }
     }
 
     [Fact]
     public async Task UpdatePassword_WithSameOldAndNew_ReturnsBadRequest()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest();
         try
         {
-            await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, request);
+            await ApiIntegrationTestHelper.RegisterUserForSetupAsync(Client, request);
             var tokens = await ApiIntegrationTestHelper.LoginAsync(
-                _client, request.Email, request.Password);
+                Client, request.Email, request.Password);
             Assert.NotNull(tokens);
 
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, tokens.AccessToken);
+                Factory, tokens.AccessToken);
 
             using var response = await authClient.PatchAsJsonAsync("/api/Auth/password",
                 new PasswordUpdateRequestDto
@@ -340,7 +328,7 @@ public sealed class AuthEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
         }
         finally
         {
-            await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
+            await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, request.Email);
         }
     }
 }

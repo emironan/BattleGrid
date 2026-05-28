@@ -39,7 +39,7 @@
 		  It will handle all the game logic and communication with clients.
 		  It is built using ASP.NET Core. 
 		  It uses RESTful APIs for DB related functionality
-			and it uses SignalR for for real-time communication/handling of user interactions.
+			and it uses SignalR for real-time communication/handling of user interactions.
 		  
 		  API, Application, Contracts, Domain, and Infrastructure belong to server backend.
 

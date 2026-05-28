@@ -78,6 +78,25 @@ public sealed class AdminController : ControllerBase
         return Ok(result);
     }
 
+    /// <summary>Grants administrator privileges to a player by username or email.</summary>
+    [HttpPost("players/grant-admin")]
+    public async Task<ActionResult<GeneralResponseDto>> GrantAdmin([FromBody] GrantAdminRequestDto dto)
+    {
+        if (!User.TryGetAuthenticatedUserId(out var adminUserId))
+            return Unauthorized();
+
+        if (!ModelState.IsValid)
+            return ValidationProblem(ModelState);
+
+        dto.AdminID = adminUserId;
+
+        var result = await _adminServices.GrantAdminAsync(dto);
+        if (!result.Success)
+            return BadRequest(result);
+
+        return Ok(result);
+    }
+
     /// <summary>Operator profile with all season stat rows (admin only).</summary>
     [HttpGet("players/{userId:int}/profile")]
     public async Task<ActionResult<AdminUserProfileResponseDto>> GetPlayerProfile(int userId)

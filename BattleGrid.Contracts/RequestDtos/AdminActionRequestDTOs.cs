@@ -41,4 +41,14 @@ namespace BattleGrid.Contracts.RequestDtos
         [Required]
         public string Reason { get; set; } = string.Empty;
     }
+
+    public class GrantAdminRequestDto
+    {
+        [JsonIgnore]
+        [Required]
+        public int AdminID { get; set; }
+
+        [Required]
+        public string PlayerInfo { get; set; } = string.Empty;
+    }
 }

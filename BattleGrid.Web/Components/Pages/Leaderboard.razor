@@ -1,4 +1,5 @@
 ﻿@page "/leaderboard"
+@using BattleGrid.Contracts
 @using BattleGrid.Contracts.ResponseDtos
 @inject BattleGrid.Web.Services.ApiService Api
 @inject AuthStateService Auth
@@ -50,6 +51,7 @@
             <div class="dashboard-card">
                 <div class="card-header">
                     <span class="icon">📊</span> COMMANDER STANDINGS
+                    <span class="muted" style="font-size: 0.85rem; margin-left: auto;">@GetRangeLabel()</span>
                 </div>
                 <div class="card-body" style="padding: 0;">
 
@@ -66,9 +68,9 @@
                                 </tr>
                             </thead>
                             <tbody>
-                                @foreach (var entry in _activeEntries)
+                                @foreach (var entry in _pagedEntries)
                                 {
-                                    var isMe = string.Equals(entry.UserName, Auth.CurrentUser?.UserName, StringComparison.OrdinalIgnoreCase);
+                                    var isMe = Auth.CurrentUser?.UserID == entry.UserId;
                                     <tr style="border-bottom: 1px solid rgba(255,255,255,0.05); background: @(isMe ? "rgba(0, 188, 212, 0.15)" : "transparent");">
                                         <td style="padding: 14px 12px; font-weight: bold;">
                                             @if (entry.Rank == 1)
@@ -77,17 +79,14 @@
                                             }
                                             else if (entry.Rank == 2)
                                             {
-
                                                 <span>🥈 2</span>
                                             }
                                             else if (entry.Rank == 3)
                                             {
-
                                                 <span>🥉 3</span>
                                             }
                                             else
                                             {
-
                                                 <span>#@entry.Rank</span>
                                             }
                                         </td>
@@ -112,6 +111,27 @@
                         </table>
                     </div>
 
+                    @if (_totalPages > 1)
+                    {
+                        <div class="table-pagination">
+                            <button type="button"
+                                    class="btn btn-outline btn-sm"
+                                    disabled="@(_currentPage <= 1)"
+                                    @onclick="GoToPreviousPage">
+                                ← PREVIOUS
+                            </button>
+                            <span class="table-pagination-meta muted">
+                                Page @_currentPage of @_totalPages
+                            </span>
+                            <button type="button"
+                                    class="btn btn-outline btn-sm"
+                                    disabled="@(_currentPage >= _totalPages)"
+                                    @onclick="GoToNextPage">
+                                NEXT →
+                            </button>
+                        </div>
+                    }
+
                 </div>
             </div>
         </div>
@@ -123,13 +143,18 @@
     private string? _errorMessage;
     private bool _showAllTime = false;
     private int _currentSeasonNo = 0;
+    private int _currentPage = 1;
+    private int _pageSize = LeaderboardLimits.PageSize;
+    private int _totalPages = 1;
 
     private List<LeaderboardEntryDto> _seasonEntries = new();
     private List<LeaderboardEntryDto> _allTimeEntries = new();
     private List<LeaderboardEntryDto> _activeEntries = new();
+    private IEnumerable<LeaderboardEntryDto> _pagedEntries = Enumerable.Empty<LeaderboardEntryDto>();
 
     protected override async Task OnInitializedAsync()
     {
+        await Auth.InitializeAsync();
         await LoadLeaderboardsAsync();
     }
 
@@ -153,15 +178,14 @@
         }
         else
         {
-            _seasonEntries = seasonResult.ToList();
-            _allTimeEntries = allTimeResult.ToList();
+            _seasonEntries = seasonResult.Entries.ToList();
+            _allTimeEntries = allTimeResult.Entries.ToList();
+            _pageSize = seasonResult.PageSize > 0 ? seasonResult.PageSize : LeaderboardLimits.PageSize;
 
             if (_seasonEntries.Any())
-            {
                 _currentSeasonNo = _seasonEntries.First().SeasonNo;
-            }
 
-            _activeEntries = _showAllTime ? _allTimeEntries : _seasonEntries;
+            SetActiveTab(_showAllTime);
         }
 
         _loading = false;
@@ -170,7 +194,57 @@
 
     private void ToggleTab(bool showAllTime)
     {
+        SetActiveTab(showAllTime);
+    }
+
+    private void SetActiveTab(bool showAllTime)
+    {
         _showAllTime = showAllTime;
         _activeEntries = _showAllTime ? _allTimeEntries : _seasonEntries;
+        _currentPage = 1;
+        UpdatePagedEntries();
+    }
+
+    private void UpdatePagedEntries()
+    {
+        var total = _activeEntries.Count;
+        _totalPages = total == 0 ? 1 : (int)Math.Ceiling(total / (double)_pageSize);
+        if (_currentPage > _totalPages)
+            _currentPage = _totalPages;
+        if (_currentPage < 1)
+            _currentPage = 1;
+
+        _pagedEntries = _activeEntries
+            .Skip((_currentPage - 1) * _pageSize)
+            .Take(_pageSize);
+    }
+
+    private void GoToPreviousPage()
+    {
+        if (_currentPage <= 1)
+            return;
+
+        _currentPage--;
+        UpdatePagedEntries();
+    }
+
+    private void GoToNextPage()
+    {
+        if (_currentPage >= _totalPages)
+            return;
+
+        _currentPage++;
+        UpdatePagedEntries();
+    }
+
+    private string GetRangeLabel()
+    {
+        var total = _activeEntries.Count;
+        if (total == 0)
+            return "No standings";
+
+        var start = (_currentPage - 1) * _pageSize + 1;
+        var end = Math.Min(_currentPage * _pageSize, total);
+        return $"Showing {start}–{end} of {total} commander(s)";
     }
 }

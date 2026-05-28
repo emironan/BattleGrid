@@ -13,10 +13,15 @@ builder.Services.AddRazorPages(options =>
 builder.Services.AddServerSideBlazor();
 
 var apiBaseUrl = builder.Configuration["ApiBaseUrl"] ?? "http://localhost:4744";
+if (!Uri.TryCreate(apiBaseUrl, UriKind.Absolute, out var apiBaseUri))
+{
+    throw new InvalidOperationException($"ApiBaseUrl is not a valid absolute URI: '{apiBaseUrl}'");
+}
 
 builder.Services.AddScoped(_ => new HttpClient
 {
-    BaseAddress = new Uri(apiBaseUrl)
+    BaseAddress = apiBaseUri,
+    Timeout = TimeSpan.FromSeconds(15)
 });
 
 builder.Services.AddScoped<AuthStateService>();

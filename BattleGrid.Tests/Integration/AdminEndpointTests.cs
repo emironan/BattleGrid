@@ -9,37 +9,25 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace BattleGrid.Tests.Integration;
 
-public sealed class AdminEndpointTests : IClassFixture<BattleGridApiFactory>, IAsyncLifetime
+public sealed class AdminEndpointTests : IntegrationApiTestBase
 {
-    private readonly BattleGridApiFactory _factory;
-    private HttpClient _client = null!;
-    private bool _databaseAvailable;
-
-    public AdminEndpointTests(BattleGridApiFactory factory) => _factory = factory;
-
-    public async Task InitializeAsync()
-    {
-        _client = _factory.CreateClient();
-        _databaseAvailable = await _factory.CanConnectToDatabaseAsync();
-    }
-
-    public Task DisposeAsync() => Task.CompletedTask;
+    public AdminEndpointTests(BattleGridApiFactory factory) : base(factory) { }
 
     [Fact]
     public async Task BanPlayer_AsNonAdmin_ReturnsForbidden()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? actor = null;
         TestUserSession? target = null;
         try
         {
-            actor = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(_client, _factory);
-            target = await ApiIntegrationTestHelper.CreateRegisteredUserAsync(_client);
+            actor = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory);
+            target = await ApiIntegrationTestHelper.CreateRegisteredUserAsync(Client);
 
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, actor.Tokens!.AccessToken);
+                Factory, actor.Tokens!.AccessToken);
 
             using var response = await authClient.PostAsJsonAsync("/api/Admin/players/ban",
                 new BanRequestDto
@@ -55,19 +43,19 @@ public sealed class AdminEndpointTests : IClassFixture<BattleGridApiFactory>, IA
         finally
         {
             if (actor is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, actor.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, actor.Email);
             if (target is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, target.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, target.Email);
         }
     }
 
     [Fact]
     public async Task BanPlayer_WithoutAuth_ReturnsUnauthorized()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
-        using var response = await _client.PostAsJsonAsync("/api/Admin/players/ban",
+        using var response = await Client.PostAsJsonAsync("/api/Admin/players/ban",
             new BanRequestDto
             {
                 PlayerInfo = "nobody@battlegrid.test",
@@ -82,18 +70,18 @@ public sealed class AdminEndpointTests : IClassFixture<BattleGridApiFactory>, IA
     [Fact]
     public async Task UnbanPlayer_AsNonAdmin_ReturnsForbidden()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? actor = null;
         TestUserSession? target = null;
         try
         {
-            actor = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(_client, _factory);
-            target = await ApiIntegrationTestHelper.CreateRegisteredUserAsync(_client);
+            actor = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory);
+            target = await ApiIntegrationTestHelper.CreateRegisteredUserAsync(Client);
 
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, actor.Tokens!.AccessToken);
+                Factory, actor.Tokens!.AccessToken);
 
             using var response = await authClient.PostAsJsonAsync("/api/Admin/players/unban",
                 new UnbanPlayerRequestDto
@@ -107,9 +95,9 @@ public sealed class AdminEndpointTests : IClassFixture<BattleGridApiFactory>, IA
         finally
         {
             if (actor is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, actor.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, actor.Email);
             if (target is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, target.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, target.Email);
         }
 
     }
@@ -117,10 +105,10 @@ public sealed class AdminEndpointTests : IClassFixture<BattleGridApiFactory>, IA
     [Fact]
     public async Task UnbanPlayer_WithoutAuth_ReturnsUnauthorized()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
-        using var response = await _client.PostAsJsonAsync("/api/Admin/players/unban",
+        using var response = await Client.PostAsJsonAsync("/api/Admin/players/unban",
             new UnbanPlayerRequestDto
             {
                 PlayerInfo = "nobody@battlegrid.test",
@@ -131,20 +119,127 @@ public sealed class AdminEndpointTests : IClassFixture<BattleGridApiFactory>, IA
     }
 
     [Fact]
-    public async Task BanAndUnbanPlayer_AsAdmin_Succeeds()
+    public async Task GrantAdmin_AsNonAdmin_ReturnsForbidden()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
+            return;
+
+        TestUserSession? actor = null;
+        TestUserSession? target = null;
+        try
+        {
+            actor = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory);
+            target = await ApiIntegrationTestHelper.CreateRegisteredUserAsync(Client);
+
+            using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
+                Factory, actor.Tokens!.AccessToken);
+
+            using var response = await authClient.PostAsJsonAsync("/api/Admin/players/grant-admin",
+                new GrantAdminRequestDto { PlayerInfo = target.Email });
+
+            Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        }
+        finally
+        {
+            if (actor is not null)
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, actor.Email);
+            if (target is not null)
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, target.Email);
+        }
+    }
+
+    [Fact]
+    public async Task GrantAdmin_WithoutAuth_ReturnsUnauthorized()
+    {
+        if (!DatabaseAvailable)
+            return;
+
+        using var response = await Client.PostAsJsonAsync("/api/Admin/players/grant-admin",
+            new GrantAdminRequestDto { PlayerInfo = "nobody@battlegrid.test" });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GrantAdmin_AsAdmin_Succeeds()
+    {
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? admin = null;
         TestUserSession? target = null;
         try
         {
-            admin = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(_client, _factory, asAdmin: true);
-            target = await ApiIntegrationTestHelper.CreateRegisteredUserAsync(_client);
+            admin = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory, asAdmin: true);
+            target = await ApiIntegrationTestHelper.CreateRegisteredUserAsync(Client);
 
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, admin.Tokens!.AccessToken);
+                Factory, admin.Tokens!.AccessToken);
+
+            using var response = await authClient.PostAsJsonAsync("/api/Admin/players/grant-admin",
+                new GrantAdminRequestDto { PlayerInfo = target.Email });
+
+            Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+            var result = await response.Content.ReadFromJsonAsync<GeneralResponseDto>();
+            Assert.NotNull(result);
+            Assert.True(result.Success);
+
+            await using var scope = Factory.Services.CreateAsyncScope();
+            var db = scope.ServiceProvider.GetRequiredService<BattleGridDbContext>();
+            var promoted = await db.User.AsNoTracking()
+                .FirstAsync(u => u.UserID == target.Profile!.UserID);
+            Assert.True(promoted.IsAdmin);
+        }
+        finally
+        {
+            if (admin is not null)
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, admin.Email);
+            if (target is not null)
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, target.Email);
+        }
+    }
+
+    [Fact]
+    public async Task GrantAdmin_AsAdmin_ReturnsBadRequest_ForUnknownPlayer()
+    {
+        if (!DatabaseAvailable)
+            return;
+
+        TestUserSession? admin = null;
+        var missingPlayerInfo = $"missing_{Guid.NewGuid():N}@battlegrid.test";
+        try
+        {
+            admin = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory, asAdmin: true);
+            using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
+                Factory, admin.Tokens!.AccessToken);
+
+            using var response = await authClient.PostAsJsonAsync("/api/Admin/players/grant-admin",
+                new GrantAdminRequestDto { PlayerInfo = missingPlayerInfo });
+
+            Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+        }
+        finally
+        {
+            if (admin is not null)
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, admin.Email);
+        }
+    }
+
+    [Fact]
+    public async Task BanAndUnbanPlayer_AsAdmin_Succeeds()
+    {
+        if (!DatabaseAvailable)
+            return;
+
+        TestUserSession? admin = null;
+        TestUserSession? target = null;
+        try
+        {
+            admin = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory, asAdmin: true);
+            target = await ApiIntegrationTestHelper.CreateRegisteredUserAsync(Client);
+
+            using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
+                Factory, admin.Tokens!.AccessToken);
 
             using var banResponse = await authClient.PostAsJsonAsync("/api/Admin/players/ban",
                 new BanRequestDto
@@ -172,25 +267,25 @@ public sealed class AdminEndpointTests : IClassFixture<BattleGridApiFactory>, IA
         finally
         {
             if (admin is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, admin.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, admin.Email);
             if (target is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, target.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, target.Email);
         }
     }
 
     [Fact]
     public async Task BanUnbanPlayer_AsAdmin_ReturnsBadRequest_ForUnknownPlayer()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? admin = null;
         var missingPlayerInfo = $"missing_{Guid.NewGuid():N}@battlegrid.test";
         try
         {
-            admin = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(_client, _factory, asAdmin: true);
+            admin = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory, asAdmin: true);
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, admin.Tokens!.AccessToken);
+                Factory, admin.Tokens!.AccessToken);
 
             using var banResponse = await authClient.PostAsJsonAsync("/api/Admin/players/ban",
                 new BanRequestDto
@@ -213,26 +308,26 @@ public sealed class AdminEndpointTests : IClassFixture<BattleGridApiFactory>, IA
         finally
         {
             if (admin is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, admin.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, admin.Email);
         }
     }
 
     [Fact]
     public async Task GetPlayerProfile_AsAdmin_ReturnsOk()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? admin = null;
         TestUserSession? target = null;
         try
         {
-            admin = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(_client, _factory, asAdmin: true);
-            target = await ApiIntegrationTestHelper.CreateRegisteredUserAsync(_client);
+            admin = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory, asAdmin: true);
+            target = await ApiIntegrationTestHelper.CreateRegisteredUserAsync(Client);
             Assert.NotNull(target.Profile);
 
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, admin.Tokens!.AccessToken);
+                Factory, admin.Tokens!.AccessToken);
 
             var profile = await authClient.GetFromJsonAsync<AdminUserProfileResponseDto>(
                 $"/api/Admin/players/{target.Profile.UserID}/profile");
@@ -244,26 +339,26 @@ public sealed class AdminEndpointTests : IClassFixture<BattleGridApiFactory>, IA
         finally
         {
             if (admin is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, admin.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, admin.Email);
             if (target is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, target.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, target.Email);
         }
     }
 
     [Fact]
     public async Task AdvanceSeason_AsAdmin_ReturnsOk_AndCreatesSeasonRow()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? admin = null;
         try
         {
-            admin = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(_client, _factory, asAdmin: true);
+            admin = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory, asAdmin: true);
             Assert.NotNull(admin.Profile);
 
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, admin.Tokens!.AccessToken);
+                Factory, admin.Tokens!.AccessToken);
 
             using var response = await ApiIntegrationTestHelper.PostAdvanceSeasonAsync(authClient);
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -274,7 +369,7 @@ public sealed class AdminEndpointTests : IClassFixture<BattleGridApiFactory>, IA
             Assert.Equal(result.PreviousSeasonNo + 1, result.NewSeasonNo);
             Assert.True(result.AdminStartingRating > 0);
 
-            await using (var scope = _factory.Services.CreateAsyncScope())
+            await using (var scope = Factory.Services.CreateAsyncScope())
             {
                 var db = scope.ServiceProvider.GetRequiredService<BattleGridDbContext>();
                 var created = await db.PlayerStat.AsNoTracking()
@@ -283,31 +378,31 @@ public sealed class AdminEndpointTests : IClassFixture<BattleGridApiFactory>, IA
             }
 
             await ApiIntegrationTestHelper.DeletePlayerStatSeasonAsync(
-                _factory, admin.Profile.UserID, result.NewSeasonNo);
+                Factory, admin.Profile.UserID, result.NewSeasonNo);
         }
         finally
         {
             if (admin is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, admin.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, admin.Email);
         }
     }
 
     [Fact]
     public async Task AdvanceSeason_AsNonAdmin_ReturnsForbidden()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? user = null;
         try
         {
-            user = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(_client, _factory);
+            user = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory);
             Assert.NotNull(user.Profile);
 
             var statCountBefore = await CountPlayerStatRowsAsync(user.Profile.UserID);
 
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, user.Tokens!.AccessToken);
+                Factory, user.Tokens!.AccessToken);
 
             using var response = await ApiIntegrationTestHelper.PostAdvanceSeasonAsync(authClient);
             Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -318,36 +413,36 @@ public sealed class AdminEndpointTests : IClassFixture<BattleGridApiFactory>, IA
         finally
         {
             if (user is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, user.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, user.Email);
         }
     }
 
     [Fact]
     public async Task AdvanceSeason_WithoutAuth_ReturnsUnauthorized()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
-        using var response = await ApiIntegrationTestHelper.PostAdvanceSeasonAsync(_client);
+        using var response = await ApiIntegrationTestHelper.PostAdvanceSeasonAsync(Client);
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
     public async Task GetPlayerMatchHistory_AsAdmin_ReturnsOk()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? admin = null;
         TestUserSession? target = null;
         try
         {
-            admin = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(_client, _factory, asAdmin: true);
-            target = await ApiIntegrationTestHelper.CreateRegisteredUserAsync(_client);
+            admin = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory, asAdmin: true);
+            target = await ApiIntegrationTestHelper.CreateRegisteredUserAsync(Client);
             Assert.NotNull(target.Profile);
 
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, admin.Tokens!.AccessToken);
+                Factory, admin.Tokens!.AccessToken);
 
             var history = await authClient.GetFromJsonAsync<MatchHistoryResponseDto>(
                 $"/api/Admin/players/{target.Profile.UserID}/match-history?limit=5");
@@ -358,24 +453,24 @@ public sealed class AdminEndpointTests : IClassFixture<BattleGridApiFactory>, IA
         finally
         {
             if (admin is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, admin.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, admin.Email);
             if (target is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, target.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, target.Email);
         }
     }
 
     [Fact]
     public async Task GetPlayerMatchHistory_AsAdmin_ReturnsNotFound_ForUnknownPlayer()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? admin = null;
         try
         {
-            admin = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(_client, _factory, asAdmin: true);
+            admin = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory, asAdmin: true);
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, admin.Tokens!.AccessToken);
+                Factory, admin.Tokens!.AccessToken);
 
             using var response = await authClient.GetAsync("/api/Admin/players/999999/match-history?limit=5");
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -383,22 +478,22 @@ public sealed class AdminEndpointTests : IClassFixture<BattleGridApiFactory>, IA
         finally
         {
             if (admin is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, admin.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, admin.Email);
         }
     }
 
     [Fact]
     public async Task GetPlayerMatchHistory_AsNonAdmin_ReturnsForbidden()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? user = null;
         try
         {
-            user = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(_client, _factory);
+            user = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory);
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, user.Tokens!.AccessToken);
+                Factory, user.Tokens!.AccessToken);
 
             using var response = await authClient.GetAsync("/api/Admin/players/1/match-history?limit=5");
             Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -406,32 +501,32 @@ public sealed class AdminEndpointTests : IClassFixture<BattleGridApiFactory>, IA
         finally
         {
             if (user is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, user.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, user.Email);
         }
     }
 
     [Fact]
     public async Task GetPlayerProfile_WithoutAuth_ReturnsUnauthorized()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
-        using var response = await _client.GetAsync("/api/Admin/players/1/profile");
+        using var response = await Client.GetAsync("/api/Admin/players/1/profile");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
     public async Task GetPlayerProfile_AsNonAdmin_ReturnsForbidden()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? user = null;
         try
         {
-            user = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(_client, _factory);
+            user = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory);
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, user.Tokens!.AccessToken);
+                Factory, user.Tokens!.AccessToken);
 
             using var response = await authClient.GetAsync("/api/Admin/players/1/profile");
             Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -439,22 +534,22 @@ public sealed class AdminEndpointTests : IClassFixture<BattleGridApiFactory>, IA
         finally
         {
             if (user is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, user.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, user.Email);
         }
     }
 
     [Fact]
     public async Task GetPlayerProfile_AsAdmin_ReturnsNotFound_ForUnknownPlayer()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? admin = null;
         try
         {
-            admin = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(_client, _factory, asAdmin: true);
+            admin = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory, asAdmin: true);
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, admin.Tokens!.AccessToken);
+                Factory, admin.Tokens!.AccessToken);
 
             using var response = await authClient.GetAsync("/api/Admin/players/999999/profile");
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -462,42 +557,42 @@ public sealed class AdminEndpointTests : IClassFixture<BattleGridApiFactory>, IA
         finally
         {
             if (admin is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, admin.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, admin.Email);
         }
     }
 
     [Fact]
     public async Task GetPlayerMatchHistory_WithoutAuth_ReturnsUnauthorized()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
-        using var response = await _client.GetAsync("/api/Admin/players/1/match-history?limit=5");
+        using var response = await Client.GetAsync("/api/Admin/players/1/match-history?limit=5");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
     public async Task GetAdminMatchReplay_WithoutAuth_ReturnsUnauthorized()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
-        using var response = await _client.GetAsync("/api/Admin/matches/999999/replay");
+        using var response = await Client.GetAsync("/api/Admin/matches/999999/replay");
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
     public async Task GetAdminMatchReplay_AsAdmin_ReturnsNotFound_ForUnknownMatch()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? admin = null;
         try
         {
-            admin = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(_client, _factory, asAdmin: true);
+            admin = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory, asAdmin: true);
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, admin.Tokens!.AccessToken);
+                Factory, admin.Tokens!.AccessToken);
 
             using var response = await authClient.GetAsync("/api/Admin/matches/999999/replay");
             Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
@@ -505,14 +600,14 @@ public sealed class AdminEndpointTests : IClassFixture<BattleGridApiFactory>, IA
         finally
         {
             if (admin is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, admin.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, admin.Email);
         }
     }
 
     [Fact]
     public async Task GetAdminMatchReplay_AsAdmin_ReturnsOk()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? admin = null;
@@ -522,19 +617,19 @@ public sealed class AdminEndpointTests : IClassFixture<BattleGridApiFactory>, IA
 
         try
         {
-            admin = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(_client, _factory, asAdmin: true);
-            player1 = await ApiIntegrationTestHelper.CreateRegisteredUserAsync(_client);
-            player2 = await ApiIntegrationTestHelper.CreateRegisteredUserAsync(_client);
+            admin = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory, asAdmin: true);
+            player1 = await ApiIntegrationTestHelper.CreateRegisteredUserAsync(Client);
+            player2 = await ApiIntegrationTestHelper.CreateRegisteredUserAsync(Client);
             Assert.NotNull(player1.Profile);
             Assert.NotNull(player2.Profile);
 
             matchId = await ApiIntegrationTestHelper.CreateReplayableMatchFixtureAsync(
-                _factory,
+                Factory,
                 player1.Profile!.UserID,
                 player2.Profile!.UserID);
 
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, admin.Tokens!.AccessToken);
+                Factory, admin.Tokens!.AccessToken);
 
             using var response = await authClient.GetAsync($"/api/Admin/matches/{matchId.Value}/replay");
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
@@ -551,29 +646,29 @@ public sealed class AdminEndpointTests : IClassFixture<BattleGridApiFactory>, IA
         finally
         {
             if (matchId is int createdMatchId)
-                await ApiIntegrationTestHelper.DeleteReplayableMatchFixtureAsync(_factory, createdMatchId);
+                await ApiIntegrationTestHelper.DeleteReplayableMatchFixtureAsync(Factory, createdMatchId);
 
             if (admin is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, admin.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, admin.Email);
             if (player1 is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, player1.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, player1.Email);
             if (player2 is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, player2.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, player2.Email);
         }
     }
 
     [Fact]
     public async Task GetAdminMatchReplay_AsNonAdmin_ReturnsForbidden()
     {
-        if (!_databaseAvailable)
+        if (!DatabaseAvailable)
             return;
 
         TestUserSession? user = null;
         try
         {
-            user = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(_client, _factory);
+            user = await ApiIntegrationTestHelper.CreateLoggedInUserAsync(Client, Factory);
             using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(
-                _factory, user.Tokens!.AccessToken);
+                Factory, user.Tokens!.AccessToken);
 
             using var response = await authClient.GetAsync("/api/Admin/matches/999999/replay");
             Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
@@ -581,13 +676,13 @@ public sealed class AdminEndpointTests : IClassFixture<BattleGridApiFactory>, IA
         finally
         {
             if (user is not null)
-                await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, user.Email);
+                await ApiIntegrationTestHelper.CleanupTestUserAsync(Factory, user.Email);
         }
     }
 
     private async Task<int> CountPlayerStatRowsAsync(int userId)
     {
-        await using var scope = _factory.Services.CreateAsyncScope();
+        await using var scope = Factory.Services.CreateAsyncScope();
         var db = scope.ServiceProvider.GetRequiredService<BattleGridDbContext>();
         return await db.PlayerStat.CountAsync(p => p.UserID == userId);
     }
