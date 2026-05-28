@@ -3,6 +3,8 @@ using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using BattleGrid.Contracts.RequestDtos;
 using BattleGrid.Contracts.ResponseDtos;
+using BattleGrid.Domain.Entities;
+using BattleGrid.Domain.Enums;
 using BattleGrid.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -25,23 +27,16 @@ internal static class ApiIntegrationTestHelper
         {
             UserName = $"{userNamePrefix}_{suffix}",
             Email = $"{userNamePrefix}_{suffix}@battlegrid.test",
-            Password = DefaultTestPassword
+            Password = DefaultTestPassword,
+            ConfirmPassword = DefaultTestPassword
         };
     }
 
-    public static Task<HttpResponseMessage> LoginPostAsync(
-        HttpClient client,
-        string loginInfo,
-        string password) =>
-        client.PostAsJsonAsync(LoginPath, new LoginRequestDto
-        {
-            LoginInfo = loginInfo,
-            Password = password
-        });
-
+    /// <summary>Raw POST to Auth/register. Caller owns the response (use <c>using</c>).</summary>
     public static async Task<HttpResponseMessage> RegisterAsync(HttpClient client, RegisterRequestDto request) =>
         await client.PostAsJsonAsync(RegisterPath, request);
 
+    /// <summary>POST register and parse AuthController plain-text body (OK message or BadRequest error text).</summary>
     public static async Task<(HttpStatusCode StatusCode, string Message)> RegisterAndReadAsync(
         HttpClient client,
         RegisterRequestDto request)
@@ -51,13 +46,29 @@ internal static class ApiIntegrationTestHelper
         return (response.StatusCode, ParseRegisterResponseBody(body));
     }
 
-    public static async Task<LoginResponseDto?> LoginAsync(HttpClient client, string loginInfo, string password)
+    /// <summary>Register a user for test setup (login, user, match fixtures). Not for timing register itself.</summary>
+    public static async Task RegisterUserForSetupAsync(HttpClient client, RegisterRequestDto request)
     {
-        using var response = await client.PostAsJsonAsync(LoginPath, new LoginRequestDto
+        var (status, message) = await RegisterAndReadAsync(client, request);
+        if (status != HttpStatusCode.OK)
+            throw new InvalidOperationException($"Test setup register failed ({status}): {message}");
+    }
+
+    /// <summary>Raw POST to Auth/login. Caller owns the response (use <c>using</c>).</summary>
+    public static async Task<HttpResponseMessage> LoginPostAsync(
+        HttpClient client,
+        string loginInfo,
+        string password) =>
+        await client.PostAsJsonAsync(LoginPath, new LoginRequestDto
         {
             LoginInfo = loginInfo,
             Password = password
         });
+
+    /// <summary>POST login for test setup when tokens are needed. Returns null if login fails.</summary>
+    public static async Task<LoginResponseDto?> LoginAsync(HttpClient client, string loginInfo, string password)
+    {
+        using var response = await LoginPostAsync(client, loginInfo, password);
 
         if (!response.IsSuccessStatusCode)
             return null;
@@ -81,9 +92,7 @@ internal static class ApiIntegrationTestHelper
     public static async Task<TestUserSession> CreateRegisteredUserAsync(HttpClient client)
     {
         var request = CreateUniqueRegisterRequest();
-        var (status, _) = await RegisterAndReadAsync(client, request);
-        if (status != HttpStatusCode.OK)
-            throw new InvalidOperationException($"Failed to register test user: {status}");
+        await RegisterUserForSetupAsync(client, request);
 
         var profile = await client.GetFromJsonAsync<UserResponseDto>(
             $"/api/User/{Uri.EscapeDataString(request.Email)}");
@@ -137,6 +146,153 @@ internal static class ApiIntegrationTestHelper
             return;
 
         db.PlayerStat.Remove(row);
+        await db.SaveChangesAsync();
+    }
+
+    public static async Task<int> CreateReplayableMatchFixtureAsync(
+        BattleGridApiFactory factory,
+        int player1Id,
+        int player2Id)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BattleGridDbContext>();
+
+        var shipId = await db.ShipType
+            .AsNoTracking()
+            .Select(s => s.ShipID)
+            .FirstAsync();
+
+        var match = new Match
+        {
+            Player1ID = player1Id,
+            Player2ID = player2Id,
+            Status = MatchStatus.P1Won,
+            TotalNoOfMoves = 1,
+            FinishReason = "All opponent ships were destroyed.",
+            StartedAt = DateTimeOffset.UtcNow.AddMinutes(-5),
+            FinishedAt = DateTimeOffset.UtcNow
+        };
+
+        await db.Match.AddAsync(match);
+        await db.SaveChangesAsync();
+
+        await db.ShipPlacement.AddRangeAsync(
+            new ShipPlacement
+            {
+                MatchID = match.MatchID,
+                PlayerID = player1Id,
+                ShipID = shipId,
+                StartX = 0,
+                StartY = 0,
+                IsVertical = false
+            },
+            new ShipPlacement
+            {
+                MatchID = match.MatchID,
+                PlayerID = player2Id,
+                ShipID = shipId,
+                StartX = 1,
+                StartY = 1,
+                IsVertical = true
+            });
+
+        await db.MatchMove.AddAsync(new MatchMove
+        {
+            MatchID = match.MatchID,
+            PlayerID = player1Id,
+            MoveNumber = 1,
+            HitX = 1,
+            HitY = 1,
+            IsHit = true
+        });
+
+        await db.SaveChangesAsync();
+        return match.MatchID;
+    }
+
+    public static async Task<int> CreateResumableMatchFixtureAsync(
+        BattleGridApiFactory factory,
+        int userId,
+        int opponentUserId,
+        MatchStatus status = MatchStatus.InProgress)
+    {
+        if (status is not (MatchStatus.InProgress or MatchStatus.PlacingShips or MatchStatus.Loading))
+            throw new ArgumentOutOfRangeException(nameof(status), "Resumable fixture must use a resumable match status.");
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BattleGridDbContext>();
+
+        var match = new Match
+        {
+            Player1ID = userId,
+            Player2ID = opponentUserId,
+            Status = status,
+            TotalNoOfMoves = 0,
+            StartedAt = DateTimeOffset.UtcNow.AddMinutes(-10),
+            FinishedAt = null
+        };
+
+        await db.Match.AddAsync(match);
+        await db.SaveChangesAsync();
+        return match.MatchID;
+    }
+
+    public static async Task<int> CreateRecoveryMatchFixtureAsync(
+        BattleGridApiFactory factory,
+        int player1Id,
+        int player2Id,
+        MatchStatus terminalStatus = MatchStatus.P1Won)
+    {
+        if (terminalStatus is MatchStatus.InProgress or MatchStatus.PlacingShips or MatchStatus.Loading)
+            throw new ArgumentOutOfRangeException(nameof(terminalStatus), "Recovery fixture must use a terminal status.");
+
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BattleGridDbContext>();
+
+        var match = new Match
+        {
+            Player1ID = player1Id,
+            Player2ID = player2Id,
+            Status = terminalStatus,
+            TotalNoOfMoves = terminalStatus == MatchStatus.Abandoned ? 0 : 1,
+            P1RatingChange = terminalStatus == MatchStatus.P1Won ? 12 : 0,
+            P2RatingChange = terminalStatus == MatchStatus.P2Won ? 12 : 0,
+            FinishReason = terminalStatus == MatchStatus.Abandoned
+                ? "Match abandoned by system."
+                : "All opponent ships were destroyed.",
+            StartedAt = DateTimeOffset.UtcNow.AddMinutes(-15),
+            FinishedAt = DateTimeOffset.UtcNow.AddMinutes(-5)
+        };
+
+        await db.Match.AddAsync(match);
+        await db.SaveChangesAsync();
+        return match.MatchID;
+    }
+
+    public static async Task DeleteReplayableMatchFixtureAsync(BattleGridApiFactory factory, int matchId)
+        => await DeleteMatchFixtureAsync(factory, matchId);
+
+    public static async Task DeleteMatchFixtureAsync(BattleGridApiFactory factory, int matchId)
+    {
+        await using var scope = factory.Services.CreateAsyncScope();
+        var db = scope.ServiceProvider.GetRequiredService<BattleGridDbContext>();
+
+        var moves = await db.MatchMove.Where(m => m.MatchID == matchId).ToListAsync();
+        if (moves.Count > 0)
+            db.MatchMove.RemoveRange(moves);
+
+        var placements = await db.ShipPlacement.Where(p => p.MatchID == matchId).ToListAsync();
+        if (placements.Count > 0)
+            db.ShipPlacement.RemoveRange(placements);
+
+        var spectators = await db.Spectator.Where(s => s.MatchID == matchId).ToListAsync();
+        if (spectators.Count > 0)
+            db.Spectator.RemoveRange(spectators);
+
+        var match = await db.Match.FirstOrDefaultAsync(m => m.MatchID == matchId);
+        if (match is not null)
+            db.Match.Remove(match);
+
         await db.SaveChangesAsync();
     }
 

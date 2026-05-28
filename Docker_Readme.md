@@ -67,8 +67,8 @@ To register a new server in pgAdmin4:
  -Change the port to 5433
  save it, and that is it. 
  
- In this new server you can see the version of BattleGridDB
-  that the container we created with docker uses. Any change made in this DB
+ In this new server you can see the version of BattleGridDB,
+  that the container we created with docker, uses. Any change made in this DB
   has no effect on the original DB. 
  For example, when you register a new user via swaggerUI 
  (ofcourse, while the containers are running) you can see this new user is added 

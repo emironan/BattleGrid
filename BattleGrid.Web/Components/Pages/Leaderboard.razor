@@ -20,10 +20,10 @@
     </div>
 
     <div class="mb-4" style="display: flex; gap: 10px;">
-        <button type="button" class="btn btn-sm @(_showAllTime ? "btn-outline-primary" : "btn-primary")" @onclick="() => ToggleTab(false)">
+        <button type="button" class="btn btn-sm @(_showAllTime ? "btn-primary" : "btn-outline-primary")" @onclick="() => ToggleTab(false)">
             CURRENT SEASON
         </button>
-        <button type="button" class="btn btn-sm @(_showAllTime ? "btn-primary" : "btn-outline-primary")" @onclick="() => ToggleTab(true)">
+        <button type="button" class="btn btn-sm @(_showAllTime ? "btn-outline-primary" : "btn-primary")" @onclick="() => ToggleTab(true)">
             ALL-TIME PEAK
         </button>
     </div>

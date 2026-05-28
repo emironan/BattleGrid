@@ -175,6 +175,15 @@ body {
     letter-spacing: 0.05em;
 }
 
+.btn .nav-queue-timer {
+    margin-left: 0.5em;
+    color: inherit;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    border-radius: 3px;
+    padding: 0.1em 0.35em;
+}
+
 .nav-btn {
     margin-left: 4px;
 }
@@ -264,6 +273,7 @@ body {
     border-radius: calc(var(--radius) - 2px);
     background: transparent;
     color: var(--muted);
+    font-family: var(--font);
     font-size: 13px;
     letter-spacing: 0.08em;
     text-decoration: none;
@@ -1691,7 +1701,6 @@ body {
     object-fit: contain;
     pointer-events: none;
     image-rendering: pixelated;
-    image-rendering: crisp-edges;
 }
 
 /* Hull art is portrait (bow at top). Vertical: slice down the image height. Horizontal: same slice, rotate 90deg so bow faces +X from anchor. */

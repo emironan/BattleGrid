@@ -34,7 +34,7 @@
                 else
                 {
                     <NavLink href="/queue" class="nav-link nav-queue-link">
-                        FIND MATCH
+                        @(Matchmaking.IsInQueue ? "IN QUEUE" : "FIND MATCH")
                         @if (Matchmaking.IsInQueue && Matchmaking.QueueStartedUtc is not null)
                         {
                             <span class="nav-queue-timer">@QueueMatchmakingService.FormatWaitClock(Matchmaking.GetQueueElapsed())</span>
@@ -109,8 +109,8 @@
         }
         else if (!MatchSession.IsLocked)
         {
-            <NavLink href="/login" class="nav-link">LOGIN</NavLink>
             <NavLink href="/register" class="btn btn-sm btn-primary nav-btn">REGISTER</NavLink>
+            <NavLink href="/login" class="btn btn-sm btn-outline nav-btn">LOGIN</NavLink>            
         }
     </div>
 </nav>

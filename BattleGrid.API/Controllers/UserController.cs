@@ -20,16 +20,11 @@ public class UserController : ControllerBase
     }
 
     [HttpGet("all")]
+    [Authorize(Policy = "Admin")]
     public async Task<ActionResult<PagedUsersResponseDto>> GetAllUsers(
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20)
     {
-        if (!User.TryGetAuthenticatedUserId(out var callerId))
-            return Unauthorized();
-
-        if (!await _userServices.IsAdminAsync(callerId))
-            return Forbid();
-
         try
         {
             var result = await _userServices.GetUsersPageAsync(page, pageSize);

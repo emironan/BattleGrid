@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using BattleGrid.Contracts.RequestDtos;
 using BattleGrid.Contracts.ResponseDtos;
 
 namespace BattleGrid.Tests.Integration;
@@ -29,7 +30,7 @@ public sealed class UserEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
         var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest();
         try
         {
-            await ApiIntegrationTestHelper.RegisterAsync(_client, request);
+            await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, request);
 
             var user = await _client.GetFromJsonAsync<UserResponseDto>(
                 $"/api/User/{Uri.EscapeDataString(request.Email)}");
@@ -93,6 +94,16 @@ public sealed class UserEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
     }
 
     [Fact]
+    public async Task GetUserById_WithoutAuth_ReturnsUnauthorized()
+    {
+        if (!_databaseAvailable)
+            return;
+
+        using var response = await _client.GetAsync("/api/User/1");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
     public async Task GetUserById_WithAuth_ReturnsUser()
     {
         if (!_databaseAvailable)
@@ -145,6 +156,16 @@ public sealed class UserEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
             if (session is not null)
                 await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, session.Email);
         }
+    }
+
+    [Fact]
+    public async Task GetAllUsers_WithoutAuth_ReturnsUnauthorized()
+    {
+        if (!_databaseAvailable)
+            return;
+
+        using var response = await _client.GetAsync("/api/User/all");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
@@ -203,6 +224,16 @@ public sealed class UserEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
     }
 
     [Fact]
+    public async Task GetBanStatus_WithoutAuth_ReturnsUnauthorized()
+    {
+        if (!_databaseAvailable)
+            return;
+
+        using var response = await _client.GetAsync("/api/User/ban-status");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
     public async Task GetCurrentSeasonStats_WithAuth_ReturnsOk()
     {
         if (!_databaseAvailable)
@@ -227,5 +258,59 @@ public sealed class UserEndpointTests : IClassFixture<BattleGridApiFactory>, IAs
             if (session is not null)
                 await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, session.Email);
         }
+    }
+
+    [Fact]
+    public async Task GetCurrentSeasonStats_WithoutAuth_ReturnsUnauthorized()
+    {
+        if (!_databaseAvailable)
+            return;
+
+        using var response = await _client.GetAsync("/api/User/stats/current-season");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ChangeEmail_WithoutAuth_ReturnsUnauthorized()
+    {
+        if (!_databaseAvailable)
+            return;
+
+        using var response = await _client.PatchAsJsonAsync("/api/User/email", new ChangeEmailRequestDto
+        {
+            NewEmail = "x@test.com",
+            Password = "x"
+        });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ChangeUsername_WithoutAuth_ReturnsUnauthorized()
+    {
+        if (!_databaseAvailable)
+            return;
+
+        using var response = await _client.PatchAsJsonAsync("/api/User/username", new ChangeUsernameRequestDto
+        {
+            NewUserName = "x_name",
+            Password = "x"
+        });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DeactivateAccount_WithoutAuth_ReturnsUnauthorized()
+    {
+        if (!_databaseAvailable)
+            return;
+
+        using var response = await _client.PatchAsJsonAsync("/api/User/deactivate", new DeactivateAccountRequestDto
+        {
+            Password = "x"
+        });
+
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 }

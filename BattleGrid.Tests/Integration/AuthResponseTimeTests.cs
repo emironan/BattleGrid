@@ -47,7 +47,7 @@ public sealed class AuthResponseTimeTests : IClassFixture<BattleGridApiFactory>,
             return;
 
         /* UserName prefix "perf" is used to identify test users in the database.
-         * Test users are deleted after each test. 
+         * Normally, test users are deleted after each test. 
          * This will help identify the root cause if a test fails to delete
          * Default is "api". So, other tests do not have to specify a prefix
          */
@@ -78,6 +78,25 @@ public sealed class AuthResponseTimeTests : IClassFixture<BattleGridApiFactory>,
     }
 
     [Fact]
+    public async Task Register_MismatchedPasswords_ResponseTime_Measures_BadRequest()
+    {
+        if (!_databaseAvailable)
+            return;
+
+        var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest("perf");
+        request.ConfirmPassword = "Mismatch_Password_456!";
+
+        var stopwatch = Stopwatch.StartNew();
+        using var response = await ApiIntegrationTestHelper.RegisterAsync(_client, request);
+        stopwatch.Stop();
+
+        _output.WriteLine($"Register mismatch-password response time: {stopwatch.ElapsedMilliseconds} ms");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        await response.Content.ReadAsStringAsync();
+    }
+
+    [Fact]
     public async Task Login_ResponseTime_Measures_FromSubmit_UntilSuccessResponse()
     {
         if (!_databaseAvailable)
@@ -85,9 +104,7 @@ public sealed class AuthResponseTimeTests : IClassFixture<BattleGridApiFactory>,
 
         var registerRequest = ApiIntegrationTestHelper.CreateUniqueRegisterRequest("perf");
 
-        using var registerResponse = await ApiIntegrationTestHelper.RegisterAsync(_client, registerRequest);
-        Assert.Equal(HttpStatusCode.OK, registerResponse.StatusCode);
-        await registerResponse.Content.ReadAsStringAsync();
+        await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, registerRequest);
 
         // Same moment as Login.razor: loading = true; await Api.LoginAsync(model);
         var stopwatch = Stopwatch.StartNew();
@@ -164,9 +181,7 @@ public sealed class AuthResponseTimeTests : IClassFixture<BattleGridApiFactory>,
         {
             var registerRequest = ApiIntegrationTestHelper.CreateUniqueRegisterRequest("perf");
 
-            using var registerResponse = await ApiIntegrationTestHelper.RegisterAsync(_client, registerRequest);
-            Assert.Equal(HttpStatusCode.OK, registerResponse.StatusCode);
-            await registerResponse.Content.ReadAsStringAsync();
+            await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, registerRequest);
 
             var stopwatch = Stopwatch.StartNew();
             using var response = await ApiIntegrationTestHelper.LoginPostAsync(
@@ -194,5 +209,305 @@ public sealed class AuthResponseTimeTests : IClassFixture<BattleGridApiFactory>,
         _output.WriteLine($"Login average: {average:F1} ms | min: {min} ms | max: {max} ms");
 
         Assert.True(average > 0);
+    }
+
+    [Fact]
+    public async Task Logout_ResponseTime_Measures_FromSubmit_UntilSuccessResponse()
+    {
+        if (!_databaseAvailable)
+            return;
+
+        var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest("perf");
+        await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, request);
+        var tokens = await ApiIntegrationTestHelper.LoginAsync(_client, request.Email, request.Password);
+        Assert.NotNull(tokens);
+
+        var stopwatch = Stopwatch.StartNew();
+        using var response = await _client.PostAsJsonAsync(ApiIntegrationTestHelper.LogoutPath,
+            new RefreshTokenRequestDto { RefreshToken = tokens.RefreshToken });
+        stopwatch.Stop();
+
+        var message = await response.Content.ReadAsStringAsync();
+        _output.WriteLine($"Logout response time: {stopwatch.ElapsedMilliseconds} ms");
+        _output.WriteLine($"HTTP {(int)response.StatusCode} - {message.Trim('\"')}");
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
+    }
+
+    [Fact]
+    public async Task Register_DuplicateEmail_ResponseTime_Measures_UntilBadRequest()
+    {
+        if (!_databaseAvailable)
+            return;
+
+        var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest("perf");
+        await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, request);
+
+        var stopwatch = Stopwatch.StartNew();
+        using var response = await ApiIntegrationTestHelper.RegisterAsync(_client, request);
+        stopwatch.Stop();
+
+        _output.WriteLine($"Register duplicate-email response time: {stopwatch.ElapsedMilliseconds} ms");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
+    }
+
+    [Fact]
+    public async Task Login_WrongPassword_ResponseTime_Measures_UntilUnauthorized()
+    {
+        if (!_databaseAvailable)
+            return;
+
+        var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest("perf");
+        await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, request);
+
+        var stopwatch = Stopwatch.StartNew();
+        using var response = await ApiIntegrationTestHelper.LoginPostAsync(
+            _client, request.Email, "wrong-password");
+        stopwatch.Stop();
+
+        _output.WriteLine($"Login wrong-password response time: {stopwatch.ElapsedMilliseconds} ms");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+
+        await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
+    }
+
+    [Fact]
+    public async Task Login_NonExistingLoginInfo_ResponseTime_Measures_UntilUnauthorized()
+    {
+        if (!_databaseAvailable)
+            return;
+
+        var stopwatch = Stopwatch.StartNew();
+        using var response = await ApiIntegrationTestHelper.LoginPostAsync(
+            _client, $"missing_{Guid.NewGuid():N}@battlegrid.test", "wrong-password");
+        stopwatch.Stop();
+
+        _output.WriteLine($"Login missing-user response time: {stopwatch.ElapsedMilliseconds} ms");
+        Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task ChangePassword_ResponseTime_Measures_SuccessfulRequest()
+    {
+        if (!_databaseAvailable)
+            return;
+
+        var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest("perf");
+        const string newPassword = "Perf_NewPassword_456!";
+        await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, request);
+        var tokens = await ApiIntegrationTestHelper.LoginAsync(_client, request.Email, request.Password);
+        Assert.NotNull(tokens);
+
+        using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(_factory, tokens.AccessToken);
+
+        var stopwatch = Stopwatch.StartNew();
+        using var response = await authClient.PatchAsJsonAsync("/api/Auth/password", new PasswordUpdateRequestDto
+        {
+            OldPassword = request.Password,
+            NewPassword = newPassword,
+            ConfirmNewPassword = newPassword
+        });
+        stopwatch.Stop();
+
+        _output.WriteLine($"Change password success response time: {stopwatch.ElapsedMilliseconds} ms");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
+    }
+
+    [Fact]
+    public async Task ChangePassword_ResponseTime_Measures_FailedRequest()
+    {
+        if (!_databaseAvailable)
+            return;
+
+        var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest("perf");
+        await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, request);
+        var tokens = await ApiIntegrationTestHelper.LoginAsync(_client, request.Email, request.Password);
+        Assert.NotNull(tokens);
+
+        using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(_factory, tokens.AccessToken);
+
+        var stopwatch = Stopwatch.StartNew();
+        using var response = await authClient.PatchAsJsonAsync("/api/Auth/password", new PasswordUpdateRequestDto
+        {
+            OldPassword = "wrong-old-password",
+            NewPassword = "Any_NewPassword_456!",
+            ConfirmNewPassword = "Any_NewPassword_456!"
+        });
+        stopwatch.Stop();
+
+        _output.WriteLine($"Change password failed response time: {stopwatch.ElapsedMilliseconds} ms");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
+    }
+
+    [Fact]
+    public async Task ChangePassword_MismatchedConfirmation_ResponseTime_Measures_FailedRequest()
+    {
+        if (!_databaseAvailable)
+            return;
+
+        var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest("perf");
+        await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, request);
+        var tokens = await ApiIntegrationTestHelper.LoginAsync(_client, request.Email, request.Password);
+        Assert.NotNull(tokens);
+
+        using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(_factory, tokens.AccessToken);
+
+        var stopwatch = Stopwatch.StartNew();
+        using var response = await authClient.PatchAsJsonAsync("/api/Auth/password", new PasswordUpdateRequestDto
+        {
+            OldPassword = request.Password,
+            NewPassword = "Mismatch_New_123!",
+            ConfirmNewPassword = "Mismatch_New_456!"
+        });
+        stopwatch.Stop();
+
+        _output.WriteLine($"Change password mismatch-confirmation response time: {stopwatch.ElapsedMilliseconds} ms");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
+    }
+
+    [Fact]
+    public async Task ChangePassword_SameOldAndNew_ResponseTime_Measures_FailedRequest()
+    {
+        if (!_databaseAvailable)
+            return;
+
+        var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest("perf");
+        await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, request);
+        var tokens = await ApiIntegrationTestHelper.LoginAsync(_client, request.Email, request.Password);
+        Assert.NotNull(tokens);
+
+        using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(_factory, tokens.AccessToken);
+
+        var stopwatch = Stopwatch.StartNew();
+        using var response = await authClient.PatchAsJsonAsync("/api/Auth/password", new PasswordUpdateRequestDto
+        {
+            OldPassword = request.Password,
+            NewPassword = request.Password,
+            ConfirmNewPassword = request.Password
+        });
+        stopwatch.Stop();
+
+        _output.WriteLine($"Change password same-old-new response time: {stopwatch.ElapsedMilliseconds} ms");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
+    }
+
+    [Fact]
+    public async Task ChangeEmail_ResponseTime_Measures_SuccessfulRequest()
+    {
+        if (!_databaseAvailable)
+            return;
+
+        var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest("perf");
+        await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, request);
+        var tokens = await ApiIntegrationTestHelper.LoginAsync(_client, request.Email, request.Password);
+        Assert.NotNull(tokens);
+
+        using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(_factory, tokens.AccessToken);
+
+        var stopwatch = Stopwatch.StartNew();
+        using var response = await authClient.PatchAsJsonAsync("/api/User/email", new ChangeEmailRequestDto
+        {
+            NewEmail = $"updated_{Guid.NewGuid():N}@battlegrid.test",
+            Password = request.Password
+        });
+        stopwatch.Stop();
+
+        _output.WriteLine($"Change email success response time: {stopwatch.ElapsedMilliseconds} ms");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
+    }
+
+    [Fact]
+    public async Task ChangeEmail_ResponseTime_Measures_FailedRequest()
+    {
+        if (!_databaseAvailable)
+            return;
+
+        var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest("perf");
+        await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, request);
+        var tokens = await ApiIntegrationTestHelper.LoginAsync(_client, request.Email, request.Password);
+        Assert.NotNull(tokens);
+
+        using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(_factory, tokens.AccessToken);
+
+        var stopwatch = Stopwatch.StartNew();
+        using var response = await authClient.PatchAsJsonAsync("/api/User/email", new ChangeEmailRequestDto
+        {
+            NewEmail = $"updated_{Guid.NewGuid():N}@battlegrid.test",
+            Password = "wrong-password"
+        });
+        stopwatch.Stop();
+
+        _output.WriteLine($"Change email failed response time: {stopwatch.ElapsedMilliseconds} ms");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
+    }
+
+    [Fact]
+    public async Task ChangeUsername_ResponseTime_Measures_SuccessfulRequest()
+    {
+        if (!_databaseAvailable)
+            return;
+
+        var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest("perf");
+        await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, request);
+        var tokens = await ApiIntegrationTestHelper.LoginAsync(_client, request.Email, request.Password);
+        Assert.NotNull(tokens);
+
+        using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(_factory, tokens.AccessToken);
+
+        var stopwatch = Stopwatch.StartNew();
+        using var response = await authClient.PatchAsJsonAsync("/api/User/username", new ChangeUsernameRequestDto
+        {
+            NewUserName = $"renamed_{Guid.NewGuid():N}"[..18],
+            Password = request.Password
+        });
+        stopwatch.Stop();
+
+        _output.WriteLine($"Change username success response time: {stopwatch.ElapsedMilliseconds} ms");
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
+    }
+
+    [Fact]
+    public async Task ChangeUsername_ResponseTime_Measures_FailedRequest()
+    {
+        if (!_databaseAvailable)
+            return;
+
+        var request = ApiIntegrationTestHelper.CreateUniqueRegisterRequest("perf");
+        await ApiIntegrationTestHelper.RegisterUserForSetupAsync(_client, request);
+        var tokens = await ApiIntegrationTestHelper.LoginAsync(_client, request.Email, request.Password);
+        Assert.NotNull(tokens);
+
+        using var authClient = ApiIntegrationTestHelper.CreateAuthenticatedClient(_factory, tokens.AccessToken);
+
+        var stopwatch = Stopwatch.StartNew();
+        using var response = await authClient.PatchAsJsonAsync("/api/User/username", new ChangeUsernameRequestDto
+        {
+            NewUserName = $"renamed_{Guid.NewGuid():N}"[..18],
+            Password = "wrong-password"
+        });
+        stopwatch.Stop();
+
+        _output.WriteLine($"Change username failed response time: {stopwatch.ElapsedMilliseconds} ms");
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+
+        await ApiIntegrationTestHelper.CleanupTestUserAsync(_factory, request.Email);
     }
 }

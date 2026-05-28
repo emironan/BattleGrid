@@ -1,6 +1,4 @@
-using BattleGrid.Contracts.RequestDtos;
 using BattleGrid.Contracts.ResponseDtos;
-using BattleGrid.Domain.Entities;
 
 namespace BattleGrid.Application.Interfaces
 {
